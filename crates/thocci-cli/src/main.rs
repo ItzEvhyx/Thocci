@@ -75,10 +75,11 @@ enum Command {
     #[command(name = "banana-split")]
     BananaSplit,
 
-    /// Switch to a named built-in soundpack
+    /// Switch to a built-in soundpack by id or name (or just run `thocci <pack>`)
     Pack {
-        /// Built-in pack id (e.g. cherry-mx, banana-split)
-        id: String,
+        /// Soundpack id or name (e.g. creamy, wooden-keyboard, "Wooden Keyboard")
+        #[arg(required = true)]
+        query: Vec<String>,
     },
 
     /// List built-in soundpacks
@@ -103,6 +104,10 @@ enum Command {
         #[arg(long)]
         volume: Option<i64>,
     },
+
+    /// Direct soundpack switch shorthand (e.g. `thocci creamy`, `thocci Wooden Keyboard`)
+    #[command(external_subcommand)]
+    DirectPack(Vec<String>),
 }
 
 fn main() -> ExitCode {
@@ -127,7 +132,8 @@ fn main() -> ExitCode {
         Command::Volume { level } => cmd_volume(level),
         Command::CherryMx => cmd_switch_pack("cherry-mx"),
         Command::BananaSplit => cmd_switch_pack("banana-split"),
-        Command::Pack { id } => cmd_switch_pack(&id),
+        Command::Pack { query } => cmd_switch_pack(&query.join(" ")),
+        Command::DirectPack(args) => cmd_switch_pack(&args.join(" ")),
         Command::Packs => cmd_packs(),
         Command::Uninstall { yes } => cmd_uninstall(yes),
         Command::Daemon {
@@ -231,14 +237,24 @@ fn cmd_volume(level: i64) -> u8 {
     }
 }
 
-fn cmd_switch_pack(pack_id: &str) -> u8 {
-    match client::set_pack(pack_id) {
+fn cmd_switch_pack(query: &str) -> u8 {
+    let pack = match soundpack::resolve_pack_query(query) {
+        Ok(pack) => pack,
+        Err(err) => {
+            eprintln!("error: {err}");
+            return 1;
+        }
+    };
+    match client::set_pack(pack.id) {
         Ok(true) => {
-            println!("pack {pack_id}");
+            println!("pack {} ({})", pack.id, pack.display_name);
             0
         }
         Ok(false) => {
-            println!("pack {pack_id} (saved; will use on next thocci on)");
+            println!(
+                "pack {} ({}; saved, will use on next thocci on)",
+                pack.id, pack.display_name
+            );
             0
         }
         Err(err) => {

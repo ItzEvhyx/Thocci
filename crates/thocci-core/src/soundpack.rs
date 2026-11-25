@@ -49,6 +49,90 @@ pub fn known_pack_ids() -> Vec<&'static str> {
     BUILTIN_PACKS.iter().map(|pack| pack.id).collect()
 }
 
+/// Resolve a user-typed pack query (id, display name, or unique partial match)
+/// to a built-in soundpack.
+///
+/// Examples: `"creamy"`, `"Wooden Keyboard"`, `"wooden-keyboard"`, `"matcha"`.
+pub fn resolve_pack_query(query: &str) -> Result<&'static BuiltinPackMeta> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err(Error::new(
+            "empty soundpack name — run `thocci packs` to list available packs",
+        ));
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    let slug = normalize_slug(trimmed);
+
+    // 1. Exact match on id, display name, or normalized slug.
+    if let Some(pack) = BUILTIN_PACKS.iter().find(|p| {
+        p.id.eq_ignore_ascii_case(trimmed)
+            || p.display_name.eq_ignore_ascii_case(trimmed)
+            || (!slug.is_empty() && (p.id == slug || normalize_slug(p.display_name) == slug))
+    }) {
+        return Ok(pack);
+    }
+
+    // 2. Unique prefix match on id or normalized display name.
+    let prefix_matches: Vec<&BuiltinPackMeta> = BUILTIN_PACKS
+        .iter()
+        .filter(|p| {
+            p.id.starts_with(&slug) || p.display_name.to_ascii_lowercase().starts_with(&lower)
+        })
+        .collect();
+    if prefix_matches.len() == 1 {
+        return Ok(prefix_matches[0]);
+    }
+    if prefix_matches.len() > 1 {
+        return Err(ambiguous_error(trimmed, &prefix_matches));
+    }
+
+    // 3. Unique substring match on id or display name.
+    let sub_matches: Vec<&BuiltinPackMeta> = BUILTIN_PACKS
+        .iter()
+        .filter(|p| {
+            (!slug.is_empty() && p.id.contains(&slug))
+                || p.display_name.to_ascii_lowercase().contains(&lower)
+        })
+        .collect();
+    if sub_matches.len() == 1 {
+        return Ok(sub_matches[0]);
+    }
+    if sub_matches.len() > 1 {
+        return Err(ambiguous_error(trimmed, &sub_matches));
+    }
+
+    Err(Error::new(format!(
+        "unknown soundpack '{trimmed}' — run `thocci packs` to see all available packs"
+    )))
+}
+
+fn normalize_slug(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut prev_dash = true;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            prev_dash = false;
+        } else if !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    if out.ends_with('-') {
+        out.pop();
+    }
+    out
+}
+
+fn ambiguous_error(query: &str, matches: &[&BuiltinPackMeta]) -> Error {
+    let ids: Vec<&str> = matches.iter().map(|p| p.id).collect();
+    Error::new(format!(
+        "ambiguous soundpack '{query}' — matches: {}",
+        ids.join(", ")
+    ))
+}
+
 /// Decoded interleaved stereo PCM clip ready for mixing.
 #[derive(Debug, Clone)]
 pub struct SoundClip {
@@ -656,5 +740,26 @@ mod tests {
     #[test]
     fn rejects_unknown_builtin() {
         assert!(Soundpack::load_builtin("does-not-exist", None).is_err());
+    }
+
+    #[test]
+    fn resolves_pack_queries_by_id_name_and_substring() {
+        assert_eq!(resolve_pack_query("creamy").unwrap().id, "creamy");
+        assert_eq!(
+            resolve_pack_query("Wooden Keyboard").unwrap().id,
+            "wooden-keyboard"
+        );
+        assert_eq!(
+            resolve_pack_query("wooden-keyboard").unwrap().id,
+            "wooden-keyboard"
+        );
+        assert_eq!(
+            resolve_pack_query("matcha").unwrap().id,
+            "kiiboom-matcha-latte"
+        );
+        assert_eq!(resolve_pack_query("orange").unwrap().id, "orange-deluxe");
+        // "reaper" matches both aula-f75-leobog-reaper and leobog-hi75-reaper.
+        assert!(resolve_pack_query("reaper").is_err());
+        assert!(resolve_pack_query("totally-unknown-pack").is_err());
     }
 }

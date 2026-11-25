@@ -46,6 +46,24 @@ fn cli_offline_commands_work_end_to_end() {
     assert!(stdout.contains("* banana-split"), "got: {stdout}");
     assert!(stdout.contains("cherry-mx"), "got: {stdout}");
 
+    // Direct pack switching by slug and by display name (multi-word).
+    let out = thocci_cmd(&state).arg("creamy").output().unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pack creamy"), "got: {stdout}");
+
+    let out = thocci_cmd(&state)
+        .args(["Wooden", "Keyboard"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("pack wooden-keyboard"), "got: {stdout}");
+
+    // Unknown pack exits non-zero.
+    let out = thocci_cmd(&state).arg("not-a-real-pack").output().unwrap();
+    assert!(!out.status.success());
+
     // Off while already stopped exits 0.
     let out = thocci_cmd(&state).arg("off").output().unwrap();
     assert!(out.status.success());
