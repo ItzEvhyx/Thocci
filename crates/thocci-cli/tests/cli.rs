@@ -70,6 +70,19 @@ fn cli_offline_commands_work_end_to_end() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("already stopped"), "got: {stdout}");
 
+    // Guide and --help render the comprehensive terminal guide.
+    for arg in ["--help", "guide"] {
+        let out = thocci_cmd(&state).arg(arg).output().unwrap();
+        assert!(out.status.success());
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("ENGINE CONTROLS"), "arg={arg}: {stdout}");
+        assert!(
+            stdout.contains("VOLUME & SOUNDPACKS"),
+            "arg={arg}: {stdout}"
+        );
+        assert!(!stdout.contains("\x1b["), "piped output should omit ANSI");
+    }
+
     // Welcome banner exits 0.
     let out = thocci_cmd(&state).arg("--welcome").output().unwrap();
     assert!(out.status.success());

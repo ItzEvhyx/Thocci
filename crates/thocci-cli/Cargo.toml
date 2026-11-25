@@ -14,3 +14,6 @@ path = "src/main.rs"
 [dependencies]
 thocci-core = { path = "../thocci-core" }
 clap = { version = "4.5", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+enable-ansi-support = "0.2"

@@ -1,10 +1,9 @@
 //! `thocci` — Mechvibes-style mechanical keyboard sounds CLI & daemon.
 //!
-//! Commands mirror Mechy 1:1:
-//!   thocci on | off | toggle | status | volume <0-100> | cherry-mx | banana-split
-//! Plus:
-//!   thocci packs       list built-in soundpacks
-//!   thocci uninstall   stop daemon and remove local installation
+//! Run `thocci`, `thocci --help`, or `thocci guide` for the colored terminal guide.
+
+mod guide;
+mod term;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -14,16 +13,26 @@ use clap::{Parser, Subcommand};
 use thocci_core::client::{self, StartOptions};
 use thocci_core::daemon::{self, DaemonConfig};
 use thocci_core::paths;
-use thocci_core::soundpack::{self, DEFAULT_PACK_ID};
+use thocci_core::soundpack;
 
 #[derive(Parser)]
 #[command(
     name = "thocci",
     version = thocci_core::VERSION,
-    about = "Mechvibes-style mechanical keyboard sounds for Linux, Windows, and macOS"
+    about = "Mechvibes-style mechanical keyboard sounds for Linux, Windows, and macOS",
+    disable_help_flag = true,
+    disable_help_subcommand = true
 )]
 struct Cli {
-    /// Print the post-install welcome banner (used by install.sh / install.ps1).
+    /// Show the comprehensive colored terminal guide
+    #[arg(short = 'h', long = "help", global = true)]
+    help: bool,
+
+    /// Disable ANSI colors (also respected automatically via NO_COLOR or pipes)
+    #[arg(long, global = true)]
+    plain: bool,
+
+    /// Print the post-install welcome banner (used by install.sh / install.ps1)
     #[arg(long, hide = true)]
     welcome: bool,
 
@@ -75,7 +84,7 @@ enum Command {
     #[command(name = "banana-split")]
     BananaSplit,
 
-    /// Switch to a built-in soundpack by id or name (or just run `thocci <pack>`)
+    /// Switch to a built-in soundpack by id or name (or run `thocci <pack>`)
     Pack {
         /// Soundpack id or name (e.g. creamy, wooden-keyboard, "Wooden Keyboard")
         #[arg(required = true)]
@@ -84,6 +93,10 @@ enum Command {
 
     /// List built-in soundpacks
     Packs,
+
+    /// Show the comprehensive terminal guide
+    #[command(alias = "help")]
+    Guide,
 
     /// Remove Thocci state files and the installed binary
     Uninstall {
@@ -112,30 +125,37 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let color = term::color_enabled(cli.plain);
 
     if cli.welcome {
-        print_welcome();
+        let mut out = io::stdout().lock();
+        let _ = guide::print_welcome(&mut out, color);
         return ExitCode::SUCCESS;
     }
 
-    let Some(command) = cli.command else {
-        // Re-run clap help when invoked with no subcommand.
-        let _ = Cli::parse_from(["thocci", "--help"]);
+    if cli.help || cli.command.is_none() {
+        let mut out = io::stdout().lock();
+        let _ = guide::print_guide(&mut out, color);
         return ExitCode::SUCCESS;
-    };
+    }
 
-    let code = match command {
-        Command::On { pack, volume } => cmd_on(pack, volume),
-        Command::Off => cmd_off(),
-        Command::Toggle { pack, volume } => cmd_toggle(pack, volume),
-        Command::Status => cmd_status(),
-        Command::Volume { level } => cmd_volume(level),
-        Command::CherryMx => cmd_switch_pack("cherry-mx"),
-        Command::BananaSplit => cmd_switch_pack("banana-split"),
-        Command::Pack { query } => cmd_switch_pack(&query.join(" ")),
-        Command::DirectPack(args) => cmd_switch_pack(&args.join(" ")),
-        Command::Packs => cmd_packs(),
-        Command::Uninstall { yes } => cmd_uninstall(yes),
+    let code = match cli.command.unwrap() {
+        Command::On { pack, volume } => cmd_on(pack, volume, color),
+        Command::Off => cmd_off(color),
+        Command::Toggle { pack, volume } => cmd_toggle(pack, volume, color),
+        Command::Status => cmd_status(color),
+        Command::Volume { level } => cmd_volume(level, color),
+        Command::CherryMx => cmd_switch_pack("cherry-mx", color),
+        Command::BananaSplit => cmd_switch_pack("banana-split", color),
+        Command::Pack { query } => cmd_switch_pack(&query.join(" "), color),
+        Command::DirectPack(args) => cmd_switch_pack(&args.join(" "), color),
+        Command::Packs => cmd_packs(color),
+        Command::Guide => {
+            let mut out = io::stdout().lock();
+            let _ = guide::print_guide(&mut out, color);
+            0
+        }
+        Command::Uninstall { yes } => cmd_uninstall(yes, color),
         Command::Daemon {
             pack,
             pack_id,
@@ -146,16 +166,34 @@ fn main() -> ExitCode {
     ExitCode::from(code)
 }
 
-fn cmd_on(pack: Option<PathBuf>, volume: Option<i64>) -> u8 {
+fn print_err(message: &str, color: bool) {
+    if color {
+        eprintln!("{}error:{} {message}", term::WARNING_RED, term::RESET);
+    } else {
+        eprintln!("error: {message}");
+    }
+}
+
+fn cmd_on(pack: Option<PathBuf>, volume: Option<i64>, color: bool) -> u8 {
     if let Some(pid) = client::running_pid() {
-        println!("already running (pid {pid})");
+        if color {
+            println!(
+                "{}● already running{} {}(pid {pid}){}",
+                term::GREEN_BOLD,
+                term::RESET,
+                term::DIM,
+                term::RESET
+            );
+        } else {
+            println!("already running (pid {pid})");
+        }
         return 0;
     }
 
     let exe = match std::env::current_exe() {
         Ok(exe) => exe,
         Err(err) => {
-            eprintln!("error: could not locate thocci executable: {err}");
+            print_err(&format!("could not locate thocci executable: {err}"), color);
             return 1;
         }
     };
@@ -174,116 +212,172 @@ fn cmd_on(pack: Option<PathBuf>, volume: Option<i64>) -> u8 {
     ) {
         Ok(status) => {
             let pid = status.pid.unwrap_or(0);
-            println!("on (pid {pid}, pack {label})");
+            if color {
+                println!(
+                    "{}● on{}  {}pid={}{}  {}pack={}{}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::DIM,
+                    pid,
+                    term::RESET,
+                    term::CMD_COLOR,
+                    label,
+                    term::RESET
+                );
+            } else {
+                println!("on (pid {pid}, pack {label})");
+            }
             0
         }
         Err(err) => {
-            eprintln!("error: {err}");
+            print_err(&err.to_string(), color);
             1
         }
     }
 }
 
-fn cmd_off() -> u8 {
+fn cmd_off(color: bool) -> u8 {
     match client::stop() {
         Ok(true) => {
-            println!("off");
+            if color {
+                println!("{}○ off{}", term::DIM, term::RESET);
+            } else {
+                println!("off");
+            }
             0
         }
         Ok(false) => {
-            println!("already stopped");
+            if color {
+                println!("{}○ already stopped{}", term::DIM, term::RESET);
+            } else {
+                println!("already stopped");
+            }
             0
         }
         Err(err) => {
-            eprintln!("error: {err}");
+            print_err(&err.to_string(), color);
             1
         }
     }
 }
 
-fn cmd_toggle(pack: Option<PathBuf>, volume: Option<i64>) -> u8 {
+fn cmd_toggle(pack: Option<PathBuf>, volume: Option<i64>, color: bool) -> u8 {
     if client::running_pid().is_none() {
-        cmd_on(pack, volume)
+        cmd_on(pack, volume, color)
     } else {
-        cmd_off()
+        cmd_off(color)
     }
 }
 
-fn cmd_status() -> u8 {
+fn cmd_status(color: bool) -> u8 {
     let st = client::status();
-    if !st.running {
-        println!("stopped (pack {})", st.pack);
-        return 1;
+    let mut out = io::stdout().lock();
+    let _ = guide::print_status(&mut out, &st, color);
+    if st.running {
+        0
+    } else {
+        1
     }
-    let pid = st.pid.unwrap_or(0);
-    println!("running (pid {pid}, volume={} pack={})", st.volume, st.pack);
-    0
 }
 
-fn cmd_volume(level: i64) -> u8 {
+fn cmd_volume(level: i64, color: bool) -> u8 {
     match client::set_volume(level) {
         Ok((percent, true)) => {
-            println!("volume {percent}");
+            if color {
+                println!(
+                    "{}✓ volume{} {}{percent}%{}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::AMBER_BOLD,
+                    term::RESET
+                );
+            } else {
+                println!("volume {percent}");
+            }
             0
         }
         Ok((percent, false)) => {
-            println!("volume {percent} (saved; daemon stopped)");
+            if color {
+                println!(
+                    "{}✓ volume{} {}{percent}%{} {}(saved; daemon stopped){}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::AMBER_BOLD,
+                    term::RESET,
+                    term::DIM,
+                    term::RESET
+                );
+            } else {
+                println!("volume {percent} (saved; daemon stopped)");
+            }
             0
         }
         Err(err) => {
-            eprintln!("{err}");
+            print_err(&err.to_string(), color);
             1
         }
     }
 }
 
-fn cmd_switch_pack(query: &str) -> u8 {
+fn cmd_switch_pack(query: &str, color: bool) -> u8 {
     let pack = match soundpack::resolve_pack_query(query) {
         Ok(pack) => pack,
         Err(err) => {
-            eprintln!("error: {err}");
+            print_err(&err.to_string(), color);
             return 1;
         }
     };
     match client::set_pack(pack.id) {
         Ok(true) => {
-            println!("pack {} ({})", pack.id, pack.display_name);
+            if color {
+                println!(
+                    "{}✓ pack{} {}{}{} {}({}){}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::CMD_COLOR,
+                    pack.id,
+                    term::RESET,
+                    term::DIM,
+                    pack.display_name,
+                    term::RESET
+                );
+            } else {
+                println!("pack {} ({})", pack.id, pack.display_name);
+            }
             0
         }
         Ok(false) => {
-            println!(
-                "pack {} ({}; saved, will use on next thocci on)",
-                pack.id, pack.display_name
-            );
+            if color {
+                println!(
+                    "{}✓ pack{} {}{}{} {}({}; saved, will use on next thocci on){}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::CMD_COLOR,
+                    pack.id,
+                    term::RESET,
+                    term::DIM,
+                    pack.display_name,
+                    term::RESET
+                );
+            } else {
+                println!(
+                    "pack {} ({}; saved, will use on next thocci on)",
+                    pack.id, pack.display_name
+                );
+            }
             0
         }
         Err(err) => {
-            eprintln!("error: {err}");
+            print_err(&err.to_string(), color);
             1
         }
     }
 }
 
-fn cmd_packs() -> u8 {
+fn cmd_packs(color: bool) -> u8 {
     let active = paths::read_saved_pack();
-    let width = soundpack::BUILTIN_PACKS
-        .iter()
-        .map(|p| p.id.len())
-        .max()
-        .unwrap_or(14)
-        + 2;
-    for pack in soundpack::BUILTIN_PACKS {
-        let marker = if pack.id == active { "*" } else { " " };
-        let default_tag = if pack.id == DEFAULT_PACK_ID {
-            " (default)"
-        } else {
-            ""
-        };
-        println!(
-            "{marker} {:<width$} {}{default_tag}",
-            pack.id, pack.display_name
-        );
-    }
+    let mut out = io::stdout().lock();
+    let _ = guide::print_packs(&mut out, &active, color);
     0
 }
 
@@ -302,13 +396,21 @@ fn cmd_daemon(pack: Option<PathBuf>, pack_id: Option<String>, volume: Option<i64
     }
 }
 
-fn cmd_uninstall(yes: bool) -> u8 {
+fn cmd_uninstall(yes: bool, color: bool) -> u8 {
     if !yes {
-        print!("Uninstall Thocci and remove its state directory? [y/N]: ");
+        if color {
+            print!(
+                "{}Uninstall Thocci and remove its state directory? [y/N]:{} ",
+                term::AMBER_BOLD,
+                term::RESET
+            );
+        } else {
+            print!("Uninstall Thocci and remove its state directory? [y/N]: ");
+        }
         let _ = io::stdout().flush();
         let mut answer = String::new();
         if io::stdin().read_line(&mut answer).is_err() {
-            eprintln!("Uninstall aborted.");
+            print_err("Uninstall aborted.", color);
             return 1;
         }
         let trimmed = answer.trim();
@@ -340,8 +442,6 @@ fn cmd_uninstall(yes: bool) -> u8 {
         }
         #[cfg(windows)]
         {
-            // On Windows a running binary cannot delete itself directly; schedule
-            // deletion right after this process exits.
             let _ = std::process::Command::new("cmd")
                 .args([
                     "/C",
@@ -353,36 +453,10 @@ fn cmd_uninstall(yes: bool) -> u8 {
         }
     }
 
-    println!("Thocci uninstalled.");
+    if color {
+        println!("{}✓ Thocci uninstalled.{}", term::GREEN_BOLD, term::RESET);
+    } else {
+        println!("Thocci uninstalled.");
+    }
     0
-}
-
-fn print_welcome() {
-    println!(
-        r#"
-  _______ _                    _
- |__   __| |                  (_)
-    | |  | |__   ___   ___ ___ _
-    | |  | '_ \ / _ \ / __/ __| |
-    | |  | | | | (_) | (_| (__| |
-    |_|  |_| |_|\___/ \___\___|_|  v{version}
-
-  Mechanical keyboard sounds for Linux, Windows, and macOS.
-
-  QUICK START:
-    thocci on                Start keystroke sounds
-    thocci off               Stop keystroke sounds
-    thocci toggle            Flip on/off
-    thocci status            Check status, volume, and active pack
-    thocci volume 50         Set volume (0-100)
-    thocci cherry-mx         Switch to Cherry MX pack (default)
-    thocci banana-split      Switch to Banana Split pack
-    thocci packs             List built-in soundpacks
-    thocci uninstall         Uninstall Thocci
-
-  REPO:
-    https://github.com/ItzEvhyx/Thocci
-"#,
-        version = thocci_core::VERSION
-    );
 }

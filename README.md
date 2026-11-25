@@ -2,7 +2,7 @@
 
 Mechvibes-style mechanical keyboard sounds for **Linux**, **Windows**, and **macOS**, written in Rust with a Tauri desktop shell.
 
-Every physical keystroke plays a low-latency clip from an embedded or custom Mechvibes soundpack. No Python, no `ffmpeg`, and no external asset folder required — built-in soundpacks are compiled directly into the standalone `thocci` binary.
+Every physical keystroke plays a low-latency clip from an embedded or custom Mechvibes v1/v2 soundpack (including separate press + release audio for v2 packs). No Python, no `ffmpeg`, and no external asset folder required — all 20 built-in soundpacks are compiled directly into the standalone `thocci` binary.
 
 ## Installation
 
@@ -26,53 +26,95 @@ Both installers place `thocci` in `~/.local/bin` (`%USERPROFILE%\.local\bin` on 
   ```bash
   sudo usermod -aG input "$USER"
   ```
-- **Windows**: Runs out of the box via a low-level keyboard hook. Note that elevated apps (some game launchers/admin terminals) only deliver hooks if Thocci is also run elevated.
+- **Windows**: Runs out of the box via a low-level keyboard hook. Elevated apps (some game launchers/admin terminals) only deliver hooks if Thocci is also run elevated.
 - **macOS**: Grant **Input Monitoring** (or **Accessibility**) permission to your terminal or Thocci in *System Settings → Privacy & Security*.
 
-## Commands
+---
 
-```text
-thocci on                # start background daemon
-thocci on --volume 60    # start at a specific volume (0-100)
-thocci on --pack /path   # start with a custom Mechvibes pack directory
-thocci off               # stop daemon
-thocci toggle            # flip on/off
-thocci status            # show running/stopped, volume, and active pack
-thocci volume 50         # adjust volume live (0-100)
-thocci cherry-mx         # switch to Cherry MX pack (default)
-thocci banana-split      # switch to Banana Split pack
-thocci packs             # list built-in soundpacks
-thocci uninstall         # stop daemon and remove Thocci
+## Terminal Guide
+
+Run `thocci`, `thocci --help`, or `thocci guide` in your terminal at any time to open the built-in, color-coded terminal guide (inspired by [ezCMD](https://github.com/ItzEvhyx/ezCMD)).
+
+> [!NOTE]
+> **Color-Coded Output:** On interactive terminals, commands are highlighted in **bold `#96d0fb`**, `<placeholders>` in **yellow**, active/running indicators in **green**, volume values in **amber**, and errors in **red**. Color automatically switches off in pipes, when `NO_COLOR` is set, or when `--plain` is passed.
+
+### Engine Controls
+
+| Command | What it does |
+|---------|--------------|
+| `thocci on` | Start keystroke sounds in the background |
+| `thocci on --volume <0-100>` | Start at a specific initial volume |
+| `thocci on --pack <dir>` | Start using a custom Mechvibes v1/v2 pack folder |
+| `thocci off` | Stop the background daemon |
+| `thocci toggle` | Flip sounds on/off (ideal to bind to a global hotkey) |
+| `thocci status` | Show live running state, PID, volume, and active pack |
+
+### Volume & Soundpack Switching
+
+| Command | What it does |
+|---------|--------------|
+| `thocci volume <0-100>` | Change volume live (or save while stopped) |
+| `thocci packs` | List all 20 built-in soundpacks with the active one highlighted |
+| `thocci <pack>` | Switch soundpacks live by **slug**, **display name**, or **unique partial match** |
+| `thocci pack <query>` | Explicit form of live pack switching |
+| `thocci cherry-mx` | Quick alias for the Cherry MX pack (default) |
+| `thocci banana-split` | Quick alias for the Banana Split pack |
+
+### Everyday Examples
+
+```bash
+thocci on                     # Start typing with Cherry MX (default)
+thocci volume 60              # Lower volume to 60% live
+thocci packs                  # Browse all 20 built-in soundpacks
+thocci creamy                 # Switch pack by slug
+thocci Wooden Keyboard        # Switch pack by full display name
+thocci matcha                 # Switch pack by unique partial match
+thocci status                 # Check PID, volume, and active pack
+thocci toggle                 # Flip on/off from a shortcut or terminal
+thocci off                    # Stop the background daemon
 ```
+
+### Flags & Maintenance
+
+| Command / Flag | What it does |
+|----------------|--------------|
+| `thocci guide` / `thocci --help` | Open the colorized Terminal Guide |
+| `thocci --plain <cmd>` | Disable ANSI colors (useful for scripts and logs) |
+| `thocci --version` | Print installed Thocci version |
+| `thocci uninstall` | Stop daemon and remove the Thocci binary and state files (`-y` skips prompt) |
+
+---
 
 ## Built-in Soundpacks
 
 All 20 soundpacks live in `assets/soundpacks/` and are embedded directly into `thocci` at build time (supporting both Mechvibes v1 and v2 press+release formats, `.ogg`, `.wav`, and `.mp3`):
 
-| Command | Pack |
-|---------|------|
-| `thocci cherry-mx` | CherryMX Black - ABS keycaps (default) |
-| `thocci banana-split` | Banana Split Lubed by Akira |
-| `thocci pack aula-f75-leobog-reaper` | aula f75 max leobog reaper switch |
-| `thocci pack clicky-perfect` | clicky perfect |
-| `thocci pack creamy` | creamy (still getting better) |
-| `thocci pack fortnite-keyboard` | fortnite keyboard |
-| `thocci pack gravastar-v75` | GravaStar V75 (Ploszy ASMR rip) |
-| `thocci pack hayyoths-keyboard` | Hayyoth's keyboard |
-| `thocci pack hyperx-alloy-cherry-mx-blue` | Hyperx Alloy Cherry MX Blue |
-| `thocci pack kailh-saker-mini` | CnT - Kailh Saker Mini Low Profile |
-| `thocci pack keychron-dream-fn-v2` | Myilo Keychron Dream FN V2 |
-| `thocci pack kiiboom-matcha-latte` | Presskey - KiiBOOM Matcha Latte |
-| `thocci pack leobog-hi75-reaper` | LEOBOG Hi75 (Reaper Switches) |
-| `thocci pack nuphy-halo75-v2-raspberry` | NuPhy Halo75 V2 (Raspberry Switches) |
-| `thocci pack orange-deluxe` | Orange deluxe - Press + Release separated |
-| `thocci pack satisfaction-bubblepop` | Satisfaction - Bubblepop |
-| `thocci pack typewriter` | TypeWriter |
-| `thocci pack wallhack-k-001` | Wallhack K-001 |
-| `thocci pack womier-sk75-tmr` | womier sk75 tmr |
-| `thocci pack wooden-keyboard` | Wooden Keyboard |
+| Pack ID | Soundpack Name | Quick Switch Example |
+|---------|----------------|----------------------|
+| `cherry-mx` | CherryMX Black - ABS keycaps *(default)* | `thocci cherry-mx` |
+| `banana-split` | Banana Split Lubed by Akira | `thocci banana-split` |
+| `aula-f75-leobog-reaper` | aula f75 max leobog reaper switch | `thocci aula` |
+| `clicky-perfect` | clicky perfect | `thocci clicky` |
+| `creamy` | creamy (still getting better) | `thocci creamy` |
+| `fortnite-keyboard` | fortnite keyboard | `thocci fortnite` |
+| `gravastar-v75` | GravaStar V75 (Ploszy ASMR rip) | `thocci gravastar` |
+| `hayyoths-keyboard` | Hayyoth's keyboard | `thocci hayyoth` |
+| `hyperx-alloy-cherry-mx-blue` | Hyperx Alloy Cherry MX Blue | `thocci hyperx` |
+| `kailh-saker-mini` | CnT - Kailh Saker Mini Low Profile | `thocci kailh` |
+| `keychron-dream-fn-v2` | Myilo Keychron Dream FN V2 | `thocci keychron` |
+| `kiiboom-matcha-latte` | Presskey - KiiBOOM Matcha Latte | `thocci matcha` |
+| `leobog-hi75-reaper` | LEOBOG Hi75 (Reaper Switches) | `thocci hi75` |
+| `nuphy-halo75-v2-raspberry` | NuPhy Halo75 V2 (Raspberry Switches) | `thocci nuphy` |
+| `orange-deluxe` | Orange deluxe - Press + Release separated | `thocci orange` |
+| `satisfaction-bubblepop` | Satisfaction - Bubblepop | `thocci bubblepop` |
+| `typewriter` | TypeWriter | `thocci typewriter` |
+| `wallhack-k-001` | Wallhack K-001 | `thocci wallhack` |
+| `womier-sk75-tmr` | womier sk75 tmr | `thocci womier` |
+| `wooden-keyboard` | Wooden Keyboard | `thocci Wooden Keyboard` |
 
-Run `thocci packs` to list all packs. Switching soundpacks and adjusting volume happen live while Thocci is running.
+Switching soundpacks and adjusting volume happen live while Thocci is running.
+
+---
 
 ## Architecture
 
@@ -85,7 +127,7 @@ Thocci/
 │   ├── thocci-core/   # Soundpack decoder (Symphonia), low-latency mixer (cpal),
 │   │                  # OS key listeners (evdev / Win32 hook / CGEventTap),
 │   │                  # daemon, localhost TCP control server & client
-│   └── thocci-cli/    # Standalone `thocci` CLI + daemon binary
+│   └── thocci-cli/    # Standalone `thocci` CLI + daemon binary & terminal guide
 ├── src-tauri/         # Tauri v2 desktop shell wired to `thocci-core`
 ├── ui/                # Minimal placeholder UI (desktop UI coming next)
 ├── install.sh         # One-line Linux/macOS installer
