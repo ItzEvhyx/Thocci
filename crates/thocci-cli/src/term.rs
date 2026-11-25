@@ -17,13 +17,14 @@ pub const CMD_COLOR: &str = "\x1b[1;38;2;150;208;251m";
 pub const RESET: &str = "\x1b[0m";
 
 /// Signature ice-blue to deep-cobalt vertical gradient for the ASCII banner.
-pub const BANNER_GRADIENT: [&str; 6] = [
+pub const BANNER_GRADIENT: [&str; 7] = [
     "\x1b[1;38;2;165;220;253m",
-    "\x1b[1;38;2;135;196;249m",
-    "\x1b[1;38;2;105;172;244m",
-    "\x1b[1;38;2;75;146;236m",
-    "\x1b[1;38;2;45;118;222m",
-    "\x1b[1;38;2;20;92;204m",
+    "\x1b[1;38;2;140;200;250m",
+    "\x1b[1;38;2;115;180;246m",
+    "\x1b[1;38;2;90;158;240m",
+    "\x1b[1;38;2;65;135;230m",
+    "\x1b[1;38;2;40;112;218m",
+    "\x1b[1;38;2;20;90;202m",
 ];
 
 #[cfg(windows)]

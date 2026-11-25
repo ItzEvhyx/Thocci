@@ -8,16 +8,17 @@ use thocci_core::soundpack::{self, DEFAULT_PACK_ID};
 
 use crate::term::{self, colorize_command};
 
-const BANNER_LINES: [&str; 6] = [
+const BANNER_LINES: [&str; 7] = [
     r"  /$$$$$$$$ /$$                                     /$$",
     r" |__  $$__/| $$                                    |__/",
     r"    | $$   | $$$$$$$   /$$$$$$   /$$$$$$$  /$$$$$$$ /$$",
     r"    | $$   | $$__  $$ /$$__  $$ /$$_____/ /$$_____/| $$",
     r"    | $$   | $$  \ $$| $$  \ $$| $$      | $$      | $$",
     r"    | $$   | $$  | $$|  $$$$$$/|  $$$$$$$|  $$$$$$$| $$",
+    r"    |__/   |__/  |__/ \______/  \_______/ \_______/|__/",
 ];
 
-const BOX_INNER_WIDTH: usize = 74;
+const BOX_INNER_WIDTH: usize = 78;
 
 /// Print the full color-coded Terminal Guide (`thocci`, `thocci --help`, `thocci guide`).
 pub fn print_guide<W: Write>(w: &mut W, color: bool) -> io::Result<()> {
