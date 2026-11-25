@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thocci</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #141519;
+        color: #f2f4f8;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 1.5rem;
+      }
+      .sub {
+        margin: 0 0 20px;
+        color: #9aa3b2;
+        font-size: 0.9rem;
+      }
+      .card {
+        background: #1d2028;
+        border: 1px solid #2c313d;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 14px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      button {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #3a4152;
+        background: #2b3140;
+        color: #f2f4f8;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button.primary {
+        background: #3b82f6;
+        border-color: #3b82f6;
+      }
+      select,
+      input[type="range"] {
+        width: 100%;
+        margin-top: 8px;
+      }
+      select {
+        padding: 8px;
+        border-radius: 8px;
+        background: #141519;
+        color: #f2f4f8;
+        border: 1px solid #3a4152;
+      }
+      #error {
+        color: #f87171;
+        font-size: 0.85rem;
+        min-height: 1.2em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Thocci</h1>
+    <p class="sub">MVP Shell &mdash; desktop UI will be designed later</p>
+
+    <div class="card row">
+      <div>
+        <strong>Engine</strong>
+        <div id="statusText" class="sub" style="margin: 4px 0 0">Loading...</div>
+      </div>
+      <button id="toggleBtn" class="primary">Start</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label for="packSelect"><strong>Soundpack</strong></label>
+      </div>
+      <select id="packSelect"></select>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label for="volumeSlider"><strong>Volume</strong></label>
+        <span id="volumeLabel">100%</span>
+      </div>
+      <input id="volumeSlider" type="range" min="0" max="100" value="100" />
+    </div>
+
+    <div id="error"></div>
+
+    <script>
+      const invoke = window.__TAURI__?.core?.invoke;
+      const statusText = document.getElementById("statusText");
+      const toggleBtn = document.getElementById("toggleBtn");
+      const packSelect = document.getElementById("packSelect");
+      const volumeSlider = document.getElementById("volumeSlider");
+      const volumeLabel = document.getElementById("volumeLabel");
+      const errorBox = document.getElementById("error");
+
+      function render(status) {
+        statusText.textContent = status.running
+          ? `Running (pid ${status.pid ?? "?"})`
+          : "Stopped";
+        toggleBtn.textContent = status.running ? "Stop" : "Start";
+        packSelect.value = status.pack;
+        volumeSlider.value = status.volume;
+        volumeLabel.textContent = `${status.volume}%`;
+        errorBox.textContent = "";
+      }
+
+      function showError(err) {
+        errorBox.textContent = String(err);
+      }
+
+      async function init() {
+        if (!invoke) {
+          statusText.textContent = "Run inside Tauri to control the daemon.";
+          return;
+        }
+        try {
+          const [packs, status] = await Promise.all([
+            invoke("list_packs"),
+            invoke("get_status"),
+          ]);
+          packSelect.innerHTML = "";
+          for (const pack of packs) {
+            const opt = document.createElement("option");
+            opt.value = pack.id;
+            opt.textContent = `${pack.display_name} (${pack.id})`;
+            packSelect.appendChild(opt);
+          }
+          render(status);
+        } catch (err) {
+          showError(err);
+        }
+      }
+
+      toggleBtn.addEventListener("click", async () => {
+        if (!invoke) return;
+        try {
+          render(await invoke("toggle_daemon"));
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      packSelect.addEventListener("change", async () => {
+        if (!invoke) return;
+        try {
+          render(await invoke("set_pack", { packId: packSelect.value }));
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      volumeSlider.addEventListener("input", () => {
+        volumeLabel.textContent = `${volumeSlider.value}%`;
+      });
+
+      volumeSlider.addEventListener("change", async () => {
+        if (!invoke) return;
+        try {
+          render(await invoke("set_volume", { level: Number(volumeSlider.value) }));
+        } catch (err) {
+          showError(err);
+        }
+      });
+
+      init();
+    </script>
+  </body>
+</html>

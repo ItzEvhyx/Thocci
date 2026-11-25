@@ -1,0 +1,338 @@
+//! Keycode translation.
+//!
+//! Every input backend reports **Linux evdev keycodes** (`input-event-codes.h`),
+//! the same contract Mechy used. Mechvibes soundpacks, however, key their
+//! `defines` by libuiohook codes. Those match Linux for the main block
+//! (1..=88) but differ for extended keys: Up is 57416 in a pack and 103 on
+//! Linux. Mechy looked up raw Linux codes, so arrows, Home/End, right Ctrl/Alt
+//! and friends were silent; [`mechvibes_code`] fixes that.
+
+/// Linux `KEY_A`: a device that reports it is treated as a keyboard.
+pub const KEY_A: u16 = 30;
+
+/// Keys that never click, matching Mechy: Caps/Num/Scroll Lock and the
+/// Super/Windows/Command keys.
+pub fn is_ignored(linux_code: u16) -> bool {
+    matches!(linux_code, 58 | 69 | 70 | 125 | 126)
+}
+
+/// Linux keycode -> Mechvibes (libuiohook) keycode used in pack `defines`.
+pub fn mechvibes_code(linux_code: u16) -> Option<u32> {
+    let code = match linux_code {
+        1..=88 => return Some(u32::from(linux_code)),
+        96 => 3612,   // KP Enter
+        97 => 3613,   // Right Ctrl
+        98 => 3637,   // KP /
+        99 => 3639,   // Print Screen
+        100 => 3640,  // Right Alt
+        102 => 3655,  // Home
+        103 => 57416, // Up
+        104 => 3657,  // Page Up
+        105 => 57419, // Left
+        106 => 57421, // Right
+        107 => 3663,  // End
+        108 => 57424, // Down
+        109 => 3665,  // Page Down
+        110 => 3666,  // Insert
+        111 => 3667,  // Delete
+        117 => 3597,  // KP =
+        119 => 3653,  // Pause
+        125 => 3675,  // Left Meta
+        126 => 3676,  // Right Meta
+        127 => 3677,  // Menu
+        183 => 91,    // F13
+        184 => 92,    // F14
+        185 => 93,    // F15
+        _ => return None,
+    };
+    Some(code)
+}
+
+/// Windows low-level hook data -> Linux keycode.
+///
+/// `scan` is the Set 1 scan code, which equals the Linux keycode for the main
+/// block. Keys sent with the 0xE0 prefix (`extended`) reuse scan codes from
+/// the numpad, so they need their own table.
+pub fn windows_to_linux(vk: u32, scan: u32, extended: bool) -> Option<u16> {
+    const VK_PAUSE: u32 = 0x13;
+    const VK_NUMLOCK: u32 = 0x90;
+    // Pause and NumLock share scan code 0x45; only the virtual key tells them apart.
+    match vk {
+        VK_PAUSE => return Some(119),
+        VK_NUMLOCK => return Some(69),
+        _ => {}
+    }
+    if extended {
+        return windows_extended_to_linux(scan);
+    }
+    match scan {
+        1..=88 => Some(scan as u16),
+        0x59 => Some(117),                               // KP =
+        0x64..=0x6E => Some(183 + (scan - 0x64) as u16), // F13..F23
+        0x76 => Some(194),                               // F24
+        // Injected input (AutoHotkey, on-screen keyboards) often has no scan code.
+        _ => windows_vk_to_linux(vk),
+    }
+}
+
+fn windows_extended_to_linux(scan: u32) -> Option<u16> {
+    let code = match scan {
+        0x1C => 96,  // KP Enter
+        0x1D => 97,  // Right Ctrl
+        0x35 => 98,  // KP /
+        0x37 => 99,  // Print Screen
+        0x38 => 100, // Right Alt
+        0x47 => 102, // Home
+        0x48 => 103, // Up
+        0x49 => 104, // Page Up
+        0x4B => 105, // Left
+        0x4D => 106, // Right
+        0x4F => 107, // End
+        0x50 => 108, // Down
+        0x51 => 109, // Page Down
+        0x52 => 110, // Insert
+        0x53 => 111, // Delete
+        0x5B => 125, // Left Windows
+        0x5C => 126, // Right Windows
+        0x5D => 127, // Menu
+        // 0x2A / 0x36 are the "fake shifts" Windows emits around numpad
+        // navigation keys; media keys also land here. Neither should click.
+        _ => return None,
+    };
+    Some(code)
+}
+
+/// Fallback by virtual-key code when the scan code is missing.
+fn windows_vk_to_linux(vk: u32) -> Option<u16> {
+    // Linux codes for VK 'A'..='Z' in alphabetical order.
+    const LETTERS: [u16; 26] = [
+        30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50, 49, 24, 25, 16, 19, 31, 20, 22, 47, 17,
+        45, 21, 44,
+    ];
+    let code = match vk {
+        0x41..=0x5A => LETTERS[(vk - 0x41) as usize],
+        0x30 => 11,
+        0x31..=0x39 => (vk - 0x31 + 2) as u16,
+        0x08 => 14,
+        0x09 => 15,
+        0x0D => 28,
+        0x1B => 1,
+        0x20 => 57,
+        0x10 | 0xA0 => 42,
+        0xA1 => 54,
+        0x11 | 0xA2 => 29,
+        0xA3 => 97,
+        0x12 | 0xA4 => 56,
+        0xA5 => 100,
+        0x21 => 104,
+        0x22 => 109,
+        0x23 => 107,
+        0x24 => 102,
+        0x25 => 105,
+        0x26 => 103,
+        0x27 => 106,
+        0x28 => 108,
+        0x2C => 99,
+        0x2D => 110,
+        0x2E => 111,
+        0x70..=0x79 => (vk - 0x70 + 59) as u16,
+        0x7A => 87,
+        0x7B => 88,
+        0xBA => 39,
+        0xBB => 13,
+        0xBC => 51,
+        0xBD => 12,
+        0xBE => 52,
+        0xBF => 53,
+        0xC0 => 41,
+        0xDB => 26,
+        0xDC => 43,
+        0xDD => 27,
+        0xDE => 40,
+        _ => return None,
+    };
+    Some(code)
+}
+
+/// macOS virtual keycode (`kVK_*`, ANSI layout positions) -> Linux keycode.
+pub fn macos_to_linux(keycode: u16) -> Option<u16> {
+    let code = match keycode {
+        0x00 => 30,  // A
+        0x01 => 31,  // S
+        0x02 => 32,  // D
+        0x03 => 33,  // F
+        0x04 => 35,  // H
+        0x05 => 34,  // G
+        0x06 => 44,  // Z
+        0x07 => 45,  // X
+        0x08 => 46,  // C
+        0x09 => 47,  // V
+        0x0A => 86,  // ISO section
+        0x0B => 48,  // B
+        0x0C => 16,  // Q
+        0x0D => 17,  // W
+        0x0E => 18,  // E
+        0x0F => 19,  // R
+        0x10 => 21,  // Y
+        0x11 => 20,  // T
+        0x12 => 2,   // 1
+        0x13 => 3,   // 2
+        0x14 => 4,   // 3
+        0x15 => 5,   // 4
+        0x16 => 7,   // 6
+        0x17 => 6,   // 5
+        0x18 => 13,  // =
+        0x19 => 10,  // 9
+        0x1A => 8,   // 7
+        0x1B => 12,  // -
+        0x1C => 9,   // 8
+        0x1D => 11,  // 0
+        0x1E => 27,  // ]
+        0x1F => 24,  // O
+        0x20 => 22,  // U
+        0x21 => 26,  // [
+        0x22 => 23,  // I
+        0x23 => 25,  // P
+        0x24 => 28,  // Return
+        0x25 => 38,  // L
+        0x26 => 36,  // J
+        0x27 => 40,  // '
+        0x28 => 37,  // K
+        0x29 => 39,  // ;
+        0x2A => 43,  // backslash
+        0x2B => 51,  // ,
+        0x2C => 53,  // /
+        0x2D => 49,  // N
+        0x2E => 50,  // M
+        0x2F => 52,  // .
+        0x30 => 15,  // Tab
+        0x31 => 57,  // Space
+        0x32 => 41,  // `
+        0x33 => 14,  // Delete (backspace)
+        0x35 => 1,   // Escape
+        0x36 => 126, // Right Command
+        0x37 => 125, // Command
+        0x38 => 42,  // Shift
+        0x39 => 58,  // Caps Lock
+        0x3A => 56,  // Option
+        0x3B => 29,  // Control
+        0x3C => 54,  // Right Shift
+        0x3D => 100, // Right Option
+        0x3E => 97,  // Right Control
+        0x40 => 187, // F17
+        0x41 => 83,  // KP .
+        0x43 => 55,  // KP *
+        0x45 => 78,  // KP +
+        0x47 => 69,  // KP Clear (NumLock position)
+        0x4B => 98,  // KP /
+        0x4C => 96,  // KP Enter
+        0x4E => 74,  // KP -
+        0x4F => 188, // F18
+        0x50 => 189, // F19
+        0x51 => 117, // KP =
+        0x52 => 82,  // KP 0
+        0x53 => 79,  // KP 1
+        0x54 => 80,  // KP 2
+        0x55 => 81,  // KP 3
+        0x56 => 75,  // KP 4
+        0x57 => 76,  // KP 5
+        0x58 => 77,  // KP 6
+        0x59 => 71,  // KP 7
+        0x5A => 190, // F20
+        0x5B => 72,  // KP 8
+        0x5C => 73,  // KP 9
+        0x60 => 63,  // F5
+        0x61 => 64,  // F6
+        0x62 => 65,  // F7
+        0x63 => 61,  // F3
+        0x64 => 66,  // F8
+        0x65 => 67,  // F9
+        0x67 => 87,  // F11
+        0x69 => 183, // F13
+        0x6A => 186, // F16
+        0x6B => 184, // F14
+        0x6D => 68,  // F10
+        0x6E => 127, // Menu
+        0x6F => 88,  // F12
+        0x71 => 185, // F15
+        0x72 => 110, // Help (Insert position)
+        0x73 => 102, // Home
+        0x74 => 104, // Page Up
+        0x75 => 111, // Forward Delete
+        0x76 => 62,  // F4
+        0x77 => 107, // End
+        0x78 => 60,  // F2
+        0x79 => 109, // Page Down
+        0x7A => 59,  // F1
+        0x7B => 105, // Left
+        0x7C => 106, // Right
+        0x7D => 108, // Down
+        0x7E => 103, // Up
+        _ => return None,
+    };
+    Some(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_block_is_identity() {
+        for code in 1..=88u16 {
+            assert_eq!(mechvibes_code(code), Some(u32::from(code)));
+        }
+    }
+
+    #[test]
+    fn arrows_map_to_mechvibes_codes() {
+        assert_eq!(mechvibes_code(103), Some(57416));
+        assert_eq!(mechvibes_code(105), Some(57419));
+        assert_eq!(mechvibes_code(106), Some(57421));
+        assert_eq!(mechvibes_code(108), Some(57424));
+        assert_eq!(mechvibes_code(500), None);
+    }
+
+    #[test]
+    fn windows_main_block_uses_scan_codes() {
+        assert_eq!(windows_to_linux(0x41, 0x1E, false), Some(30)); // A
+        assert_eq!(windows_to_linux(0x0D, 0x1C, false), Some(28)); // Enter
+        assert_eq!(windows_to_linux(0x0D, 0x1C, true), Some(96)); // KP Enter
+    }
+
+    #[test]
+    fn windows_extended_keys_do_not_alias_numpad() {
+        assert_eq!(windows_to_linux(0x26, 0x48, true), Some(103)); // Up arrow
+        assert_eq!(windows_to_linux(0x68, 0x48, false), Some(72)); // KP 8
+        assert_eq!(windows_to_linux(0xA0, 0x2A, true), None); // fake shift
+    }
+
+    #[test]
+    fn windows_pause_and_numlock_use_virtual_key() {
+        assert_eq!(windows_to_linux(0x13, 0x45, false), Some(119));
+        assert_eq!(windows_to_linux(0x90, 0x45, true), Some(69));
+    }
+
+    #[test]
+    fn windows_falls_back_to_virtual_key() {
+        assert_eq!(windows_to_linux(0x5A, 0, false), Some(44)); // Z
+        assert_eq!(windows_to_linux(0x39, 0, false), Some(10)); // 9
+        assert_eq!(windows_to_linux(0x7B, 0, false), Some(88)); // F12
+    }
+
+    #[test]
+    fn macos_letters_and_arrows() {
+        assert_eq!(macos_to_linux(0x00), Some(30));
+        assert_eq!(macos_to_linux(0x31), Some(57));
+        assert_eq!(macos_to_linux(0x7E), Some(103));
+        assert_eq!(macos_to_linux(0x3F), None); // Fn
+    }
+
+    #[test]
+    fn ignored_keys_match_mechy() {
+        for code in [58, 69, 70, 125, 126] {
+            assert!(is_ignored(code));
+        }
+        assert!(!is_ignored(KEY_A));
+    }
+}

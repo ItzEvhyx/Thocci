@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/thocci-core", "crates/thocci-cli", "src-tauri"]
+# `cargo build` / `cargo test` at the root build the lightweight CLI + core
+# without requiring webkit2gtk. Use `-p thocci-app` (or `pnpm dev`) for the GUI.
+default-members = ["crates/thocci-core", "crates/thocci-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ItzEvhyx/Thocci"
+authors = ["ItzEvhyx"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
