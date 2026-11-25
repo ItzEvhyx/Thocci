@@ -1,9 +1,15 @@
-//! Mechvibes-format soundpack loader and built-in pack registry.
+//! Mechvibes v1 & v2 soundpack loader and auto-embedded built-in registry.
 //!
-//! Built-in packs (`cherry-mx` and `banana-split`) are embedded directly in the
-//! binary so `thocci` works as a single standalone executable without external
-//! `assets/` files or `ffmpeg`. Custom Mechvibes directories on disk are also
-//! supported via `--pack <dir>`.
+//! All soundpacks under `assets/soundpacks/` are embedded directly into the
+//! binary at compile time via `build.rs` so `thocci` stays a standalone
+//! executable without external `assets/` folders or `ffmpeg`.
+//!
+//! Supports:
+//! - Mechvibes v1 (`defines` keyed by numeric libuiohook codes, `single` & `multi`)
+//! - Mechvibes v2 (`config_version: "2"`, `definitions` keyed by DOM
+//!   `KeyboardEvent.code` names, `[start_ms, end_ms]` press & optional release
+//!   timings, `single` & `multi`, plus `"Generic"`/`"key"` fallbacks)
+//! - Audio formats decoded in pure Rust via Symphonia: `.ogg`, `.wav`, `.mp3`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -33,18 +39,7 @@ pub struct BuiltinPackMeta {
     pub folder_name: &'static str,
 }
 
-pub const BUILTIN_PACKS: &[BuiltinPackMeta] = &[
-    BuiltinPackMeta {
-        id: "cherry-mx",
-        display_name: "CherryMX Black - ABS keycaps",
-        folder_name: "cherrymx_brown",
-    },
-    BuiltinPackMeta {
-        id: "banana-split",
-        display_name: "Banana Split Lubed by Akira",
-        folder_name: "bannasplit",
-    },
-];
+include!(concat!(env!("OUT_DIR"), "/embedded_packs.rs"));
 
 pub fn is_builtin(pack_id: &str) -> bool {
     BUILTIN_PACKS.iter().any(|pack| pack.id == pack_id)
@@ -62,6 +57,13 @@ pub struct SoundClip {
     pub sample_rate: u32,
 }
 
+/// Press and optional release clip for one key.
+#[derive(Debug, Clone)]
+pub struct KeySound {
+    pub down: SoundClip,
+    pub up: Option<SoundClip>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SoundpackInfo {
     pub id: String,
@@ -71,92 +73,61 @@ pub struct SoundpackInfo {
     pub path: Option<PathBuf>,
 }
 
-/// Loaded Mechvibes soundpack ready for fast keycode lookup.
+/// Loaded Mechvibes v1 or v2 soundpack ready for fast keycode lookup.
 pub struct Soundpack {
     info: SoundpackInfo,
-    /// Keyed by Mechvibes (libuiohook) keycode from `config.json`.
-    clips: HashMap<u32, SoundClip>,
+    /// Direct Linux keycode map (populated by Mechvibes v2 packs).
+    linux_keys: HashMap<u16, KeySound>,
+    /// Numeric Mechvibes (libuiohook) keycode map (populated by v1 packs).
+    mechvibes_keys: HashMap<u32, KeySound>,
+    /// Optional fallback sound for v2 packs defining `"Generic"` or `"key"`.
+    fallback: Option<KeySound>,
 }
 
 #[derive(Deserialize)]
 struct RawConfig {
     name: Option<String>,
+    config_version: Option<serde_json::Value>,
+    // v1 fields
     key_define_type: Option<String>,
     includes_numpad: Option<bool>,
     sound: Option<String>,
     defines: Option<HashMap<String, serde_json::Value>>,
+    // v2 fields
+    definition_method: Option<String>,
+    audio_file: Option<String>,
+    definitions: Option<HashMap<String, RawV2Def>>,
 }
 
-struct EmbeddedFile {
-    name: &'static str,
-    bytes: &'static [u8],
+#[derive(Deserialize)]
+struct RawV2Def {
+    audio_file: Option<String>,
+    timing: Option<Vec<Vec<f64>>>,
 }
-
-const CHERRY_MX_CONFIG: &[u8] = include_bytes!("../assets/soundpack/cherrymx_brown/config.json");
-const CHERRY_MX_SOUND: &[u8] = include_bytes!("../assets/soundpack/cherrymx_brown/sound.ogg");
-
-const BANANA_CONFIG: &[u8] = include_bytes!("../assets/soundpack/bannasplit/config.json");
-const BANANA_FILES: &[EmbeddedFile] = &[
-    EmbeddedFile {
-        name: "banana-l-1.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-1.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-2.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-2.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-3.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-3.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-4.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-4.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-5.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-5.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-6.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-6.wav"),
-    },
-    EmbeddedFile {
-        name: "banana-l-7.wav",
-        bytes: include_bytes!("../assets/soundpack/bannasplit/banana-l-7.wav"),
-    },
-];
 
 enum PackSource<'a> {
-    Embedded {
-        id: &'a str,
-        config: &'static [u8],
-        files: &'a [EmbeddedFile],
-    },
-    Directory {
-        id: String,
-        dir: PathBuf,
-    },
+    Embedded(&'a EmbeddedPack),
+    Directory { id: String, dir: PathBuf },
 }
 
 impl PackSource<'_> {
     fn id(&self) -> &str {
         match self {
-            Self::Embedded { id, .. } => id,
+            Self::Embedded(pack) => pack.meta.id,
             Self::Directory { id, .. } => id,
         }
     }
 
     fn dir(&self) -> Option<PathBuf> {
         match self {
-            Self::Embedded { .. } => None,
+            Self::Embedded(_) => None,
             Self::Directory { dir, .. } => Some(dir.clone()),
         }
     }
 
     fn read_config(&self) -> Result<Vec<u8>> {
         match self {
-            Self::Embedded { config, .. } => Ok(config.to_vec()),
+            Self::Embedded(pack) => Ok(pack.config.to_vec()),
             Self::Directory { dir, .. } => {
                 let path = dir.join("config.json");
                 fs::read(&path)
@@ -167,7 +138,8 @@ impl PackSource<'_> {
 
     fn read_audio(&self, filename: &str) -> Result<Vec<u8>> {
         match self {
-            Self::Embedded { files, .. } => files
+            Self::Embedded(pack) => pack
+                .files
                 .iter()
                 .find(|entry| entry.name == filename)
                 .map(|entry| entry.bytes.to_vec())
@@ -182,38 +154,21 @@ impl PackSource<'_> {
 }
 
 impl Soundpack {
-    /// Load one of the embedded built-in packs (`cherry-mx`, `banana-split`),
-    /// optionally pre-resampling clips to `target_rate` Hz.
+    /// Load any embedded built-in pack from `assets/soundpacks/`.
     pub fn load_builtin(pack_id: &str, target_rate: Option<u32>) -> Result<Self> {
-        let cherry_files = [EmbeddedFile {
-            name: "sound.ogg",
-            bytes: CHERRY_MX_SOUND,
-        }];
-        match pack_id {
-            "cherry-mx" => Self::load_from_source(
-                &PackSource::Embedded {
-                    id: "cherry-mx",
-                    config: CHERRY_MX_CONFIG,
-                    files: &cherry_files,
-                },
-                target_rate,
-            ),
-            "banana-split" => Self::load_from_source(
-                &PackSource::Embedded {
-                    id: "banana-split",
-                    config: BANANA_CONFIG,
-                    files: BANANA_FILES,
-                },
-                target_rate,
-            ),
-            other => Err(Error::new(format!(
-                "unknown pack '{other}'. Known: {}",
-                known_pack_ids().join(", ")
-            ))),
-        }
+        let embedded = EMBEDDED_PACKS
+            .iter()
+            .find(|pack| pack.meta.id == pack_id)
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "unknown pack '{pack_id}'. Known: {}",
+                    known_pack_ids().join(", ")
+                ))
+            })?;
+        Self::load_from_source(&PackSource::Embedded(embedded), target_rate)
     }
 
-    /// Load a custom Mechvibes soundpack directory from disk.
+    /// Load a custom Mechvibes v1 or v2 soundpack directory from disk.
     pub fn load_from_dir(
         dir: &Path,
         pack_id: Option<&str>,
@@ -240,37 +195,77 @@ impl Soundpack {
 
     fn load_from_source(source: &PackSource<'_>, target_rate: Option<u32>) -> Result<Self> {
         let config_bytes = source.read_config()?;
-        let raw: RawConfig = serde_json::from_slice(&config_bytes)
+        let config_str = std::str::from_utf8(&config_bytes)
+            .map_err(|err| Error::new(format!("Invalid UTF-8 in config.json: {err}")))?
+            .trim_start_matches('\u{feff}');
+        let raw: RawConfig = serde_json::from_str(config_str)
             .map_err(|err| Error::new(format!("Invalid config.json: {err}")))?;
 
-        let key_define_type = raw.key_define_type.unwrap_or_else(|| "single".to_owned());
-        let name = raw.name.unwrap_or_else(|| source.id().to_owned());
+        let is_v2 = raw.definitions.is_some()
+            || raw
+                .config_version
+                .as_ref()
+                .is_some_and(|v| v.as_str() == Some("2") || v.as_u64() == Some(2));
+
+        let key_define_type = if is_v2 {
+            raw.definition_method
+                .clone()
+                .unwrap_or_else(|| "single".to_owned())
+        } else {
+            raw.key_define_type
+                .clone()
+                .unwrap_or_else(|| "single".to_owned())
+        };
+
         let info = SoundpackInfo {
             id: source.id().to_owned(),
-            name,
+            name: raw.name.unwrap_or_else(|| source.id().to_owned()),
             key_define_type: key_define_type.clone(),
             includes_numpad: raw.includes_numpad.unwrap_or(false),
             path: source.dir(),
         };
 
+        if is_v2 {
+            let defs = raw.definitions.unwrap_or_default();
+            let default_audio = raw.audio_file.as_deref();
+            let (linux_keys, fallback) = load_v2_clips(source, default_audio, &defs, target_rate)?;
+            if linux_keys.is_empty() && fallback.is_none() {
+                return Err(Error::new(format!(
+                    "No playable key definitions in soundpack '{}'",
+                    info.name
+                )));
+            }
+            return Ok(Self {
+                info,
+                linux_keys,
+                mechvibes_keys: HashMap::new(),
+                fallback,
+            });
+        }
+
         let defines = raw.defines.unwrap_or_default();
-        let clips = if key_define_type == "single" {
+        let mechvibes_keys = if key_define_type == "single" {
             let sound_name = raw.sound.filter(|name| !name.is_empty()).ok_or_else(|| {
                 Error::new("Single-type soundpack requires a 'sound' field in config.json")
             })?;
-            load_single_clips(source, &sound_name, &defines, target_rate)?
+            load_v1_single(source, &sound_name, &defines, target_rate)?
         } else {
-            load_multi_clips(source, &defines, target_rate)?
+            load_v1_multi(source, &defines, target_rate)?
         };
 
-        if clips.is_empty() {
+        if mechvibes_keys.is_empty() {
             return Err(Error::new(format!(
                 "No playable key definitions in soundpack '{}'",
                 info.name
             )));
         }
 
-        Ok(Self { info, clips })
+        Ok(Self {
+            info,
+            linux_keys: HashMap::new(),
+            mechvibes_keys,
+            fallback: None,
+        })
     }
 
     pub fn info(&self) -> &SoundpackInfo {
@@ -278,31 +273,122 @@ impl Soundpack {
     }
 
     pub fn key_count(&self) -> usize {
-        self.clips.len()
+        if !self.linux_keys.is_empty() {
+            self.linux_keys.len()
+        } else {
+            self.mechvibes_keys.len()
+        }
     }
 
-    /// Look up the sound clip for a Linux evdev keycode.
-    pub fn clip_for_linux_key(&self, linux_code: u16) -> Option<&SoundClip> {
+    /// Look up press/release sounds for a Linux evdev keycode.
+    pub fn sound_for_linux_key(&self, linux_code: u16) -> Option<&KeySound> {
+        if let Some(sound) = self.linux_keys.get(&linux_code) {
+            return Some(sound);
+        }
         if let Some(mv_code) = keymap::mechvibes_code(linux_code) {
-            if let Some(clip) = self.clips.get(&mv_code) {
-                return Some(clip);
+            if let Some(sound) = self.mechvibes_keys.get(&mv_code) {
+                return Some(sound);
             }
         }
-        self.clips.get(&u32::from(linux_code))
+        if let Some(sound) = self.mechvibes_keys.get(&u32::from(linux_code)) {
+            return Some(sound);
+        }
+        self.fallback.as_ref()
     }
 
-    /// Look up a clip by its raw `config.json` keycode (used in tests).
-    pub fn clip_for_raw_code(&self, code: u32) -> Option<&SoundClip> {
-        self.clips.get(&code)
+    /// Convenience accessor for a key's press clip.
+    pub fn clip_for_linux_key(&self, linux_code: u16) -> Option<&SoundClip> {
+        self.sound_for_linux_key(linux_code).map(|s| &s.down)
     }
 }
 
-fn load_single_clips(
+fn load_v2_clips(
+    source: &PackSource<'_>,
+    default_audio: Option<&str>,
+    definitions: &HashMap<String, RawV2Def>,
+    target_rate: Option<u32>,
+) -> Result<(HashMap<u16, KeySound>, Option<KeySound>)> {
+    let mut decoded_files: HashMap<String, DecodedAudio> = HashMap::new();
+    let mut linux_keys = HashMap::new();
+    let mut fallback = None;
+
+    for (key_name, def) in definitions {
+        let Some(audio_name) = def.audio_file.as_deref().or(default_audio) else {
+            continue;
+        };
+        if !decoded_files.contains_key(audio_name) {
+            let Ok(bytes) = source.read_audio(audio_name) else {
+                continue;
+            };
+            let decoded = decode_audio(bytes, extension_hint(audio_name))?;
+            decoded_files.insert(audio_name.to_owned(), decoded);
+        }
+        let decoded = &decoded_files[audio_name];
+        let Some(sound) = build_v2_key_sound(decoded, def.timing.as_deref(), target_rate) else {
+            continue;
+        };
+
+        if matches!(key_name.as_str(), "Generic" | "key") {
+            fallback = Some(sound);
+        } else if let Some(linux_code) = keymap::dom_code_to_linux(key_name) {
+            linux_keys.insert(linux_code, sound);
+        }
+    }
+
+    Ok((linux_keys, fallback))
+}
+
+fn build_v2_key_sound(
+    decoded: &DecodedAudio,
+    timings: Option<&[Vec<f64>]>,
+    target_rate: Option<u32>,
+) -> Option<KeySound> {
+    let timings = timings?;
+    let first = timings.first()?;
+    let down = slice_v2_range(decoded, first, target_rate)?;
+    let up = timings
+        .get(1)
+        .and_then(|pair| slice_v2_range(decoded, pair, target_rate));
+    Some(KeySound { down, up })
+}
+
+fn slice_v2_range(
+    decoded: &DecodedAudio,
+    pair: &[f64],
+    target_rate: Option<u32>,
+) -> Option<SoundClip> {
+    if pair.len() < 2 {
+        return None;
+    }
+    let start_ms = pair[0].max(0.0);
+    let end_ms = pair[1];
+    if end_ms <= start_ms {
+        return None;
+    }
+
+    let total_frames = decoded.stereo.len() / 2;
+    let src_rate = decoded.sample_rate;
+    let start_frame = ((start_ms * f64::from(src_rate)) / 1000.0).round() as usize;
+    let end_frame = (((end_ms * f64::from(src_rate)) / 1000.0).round() as usize).min(total_frames);
+    if start_frame >= end_frame {
+        return None;
+    }
+
+    let dst_rate = target_rate.unwrap_or(src_rate);
+    let slice = &decoded.stereo[start_frame * 2..end_frame * 2];
+    let normalized = resample_stereo(slice, src_rate, dst_rate);
+    Some(SoundClip {
+        samples: Arc::from(normalized),
+        sample_rate: dst_rate,
+    })
+}
+
+fn load_v1_single(
     source: &PackSource<'_>,
     sound_name: &str,
     defines: &HashMap<String, serde_json::Value>,
     target_rate: Option<u32>,
-) -> Result<HashMap<u32, SoundClip>> {
+) -> Result<HashMap<u32, KeySound>> {
     let bytes = source.read_audio(sound_name)?;
     let decoded = decode_audio(bytes, extension_hint(sound_name))?;
     let total_frames = decoded.stereo.len() / 2;
@@ -314,11 +400,11 @@ fn load_single_clips(
         let Ok(keycode) = key.parse::<u32>() else {
             continue;
         };
-        let Some((offset_ms, duration_ms)) = parse_slice_def(value) else {
+        let Some((offset_ms, duration_ms)) = parse_v1_slice(value) else {
             continue;
         };
-        let start_frame = ((offset_ms as u64 * u64::from(src_rate)) / 1000) as usize;
-        let len_frames = ((duration_ms as u64 * u64::from(src_rate)) / 1000) as usize;
+        let start_frame = ((u64::from(offset_ms) * u64::from(src_rate)) / 1000) as usize;
+        let len_frames = ((u64::from(duration_ms) * u64::from(src_rate)) / 1000) as usize;
         let end_frame = start_frame.saturating_add(len_frames).min(total_frames);
         if start_frame >= end_frame {
             continue;
@@ -327,20 +413,23 @@ fn load_single_clips(
         let normalized = resample_stereo(slice, src_rate, dst_rate);
         clips.insert(
             keycode,
-            SoundClip {
-                samples: Arc::from(normalized),
-                sample_rate: dst_rate,
+            KeySound {
+                down: SoundClip {
+                    samples: Arc::from(normalized),
+                    sample_rate: dst_rate,
+                },
+                up: None,
             },
         );
     }
     Ok(clips)
 }
 
-fn load_multi_clips(
+fn load_v1_multi(
     source: &PackSource<'_>,
     defines: &HashMap<String, serde_json::Value>,
     target_rate: Option<u32>,
-) -> Result<HashMap<u32, SoundClip>> {
+) -> Result<HashMap<u32, KeySound>> {
     let mut cache: HashMap<String, SoundClip> = HashMap::new();
     let mut clips = HashMap::new();
 
@@ -352,7 +441,13 @@ fn load_multi_clips(
             continue;
         };
         if let Some(existing) = cache.get(filename) {
-            clips.insert(keycode, existing.clone());
+            clips.insert(
+                keycode,
+                KeySound {
+                    down: existing.clone(),
+                    up: None,
+                },
+            );
             continue;
         }
         let Ok(bytes) = source.read_audio(filename) else {
@@ -366,12 +461,18 @@ fn load_multi_clips(
             sample_rate: dst_rate,
         };
         cache.insert(filename.to_owned(), clip.clone());
-        clips.insert(keycode, clip);
+        clips.insert(
+            keycode,
+            KeySound {
+                down: clip,
+                up: None,
+            },
+        );
     }
     Ok(clips)
 }
 
-fn parse_slice_def(value: &serde_json::Value) -> Option<(u32, u32)> {
+fn parse_v1_slice(value: &serde_json::Value) -> Option<(u32, u32)> {
     let arr = value.as_array()?;
     if arr.len() < 2 {
         return None;
@@ -513,28 +614,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_embedded_cherry_mx() {
-        let pack = Soundpack::load_builtin("cherry-mx", Some(48_000)).unwrap();
-        assert_eq!(pack.info().id, "cherry-mx");
-        assert_eq!(pack.key_count(), 114);
-        let a_clip = pack.clip_for_linux_key(30).expect("KEY_A clip");
-        assert_eq!(a_clip.sample_rate, 48_000);
-        assert!(a_clip.samples.len() > 1000);
-        // Extended key (Up arrow = Linux 103 -> Mechvibes 57416) must resolve!
-        assert!(pack.clip_for_linux_key(103).is_some());
-        assert!(pack.clip_for_linux_key(111).is_some()); // Delete
-        assert!(pack.clip_for_linux_key(96).is_some()); // KP Enter
+    fn loads_all_embedded_soundpacks() {
+        assert_eq!(BUILTIN_PACKS.len(), 20);
+        for meta in BUILTIN_PACKS {
+            let pack = Soundpack::load_builtin(meta.id, Some(48_000))
+                .unwrap_or_else(|err| panic!("failed to load '{}': {err}", meta.id));
+            assert!(pack.key_count() > 0, "pack '{}' has 0 keys", meta.id);
+            let a_clip = pack
+                .clip_for_linux_key(30)
+                .unwrap_or_else(|| panic!("pack '{}' missing KEY_A", meta.id));
+            assert_eq!(a_clip.sample_rate, 48_000);
+            assert!(
+                a_clip.samples.len() > 200,
+                "pack '{}' KEY_A too short",
+                meta.id
+            );
+            assert!(
+                pack.clip_for_linux_key(57).is_some(),
+                "pack '{}' missing Space",
+                meta.id
+            );
+        }
     }
 
     #[test]
-    fn loads_embedded_banana_split() {
-        let pack = Soundpack::load_builtin("banana-split", Some(48_000)).unwrap();
-        assert_eq!(pack.info().id, "banana-split");
-        assert_eq!(pack.key_count(), 118);
-        let enter_clip = pack.clip_for_linux_key(28).expect("KEY_ENTER clip");
-        assert_eq!(enter_clip.sample_rate, 48_000);
-        assert!(enter_clip.samples.len() > 1000);
-        assert!(pack.clip_for_linux_key(105).is_some()); // Left arrow
+    fn loads_press_and_release_sounds_for_v2_pack() {
+        let pack = Soundpack::load_builtin("orange-deluxe", Some(48_000)).unwrap();
+        let sound = pack.sound_for_linux_key(30).expect("KEY_A sound");
+        assert!(sound.down.samples.len() > 200);
+        assert!(sound.up.as_ref().is_some_and(|u| u.samples.len() > 200));
+    }
+
+    #[test]
+    fn v1_extended_keys_resolve() {
+        let pack = Soundpack::load_builtin("cherry-mx", Some(48_000)).unwrap();
+        assert!(pack.clip_for_linux_key(103).is_some()); // Up
+        assert!(pack.clip_for_linux_key(111).is_some()); // Delete
+        assert!(pack.clip_for_linux_key(96).is_some()); // KP Enter
     }
 
     #[test]

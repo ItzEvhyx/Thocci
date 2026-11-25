@@ -1,0 +1,692 @@
+{
+  "config_version": "2",
+  "name": "creamy (still getting better)",
+  "author": "Ilano Tennekens",
+  "description": "A custom sound pack created with the Mechvibes editor.",
+  "tags": [
+    "asmr"
+  ],
+  "definition_method": "single",
+  "audio_file": "audio.ogg",
+  "soundpack_type": "Keyboard",
+  "options": {
+    "recommended_volume": 1,
+    "random_pitch": false
+  },
+  "definitions": {
+    "Escape": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Backquote": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit1": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit2": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit3": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit4": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit5": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit6": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit7": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit8": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit9": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Digit0": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Minus": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Equal": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyQ": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyW": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyE": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyR": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyT": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyY": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyU": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyI": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyO": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyA": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyS": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyD": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyF": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyG": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyH": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyJ": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyK": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyL": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyZ": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyX": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyC": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyV": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyB": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyN": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "KeyM": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad7": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad8": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad9": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad4": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad5": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad6": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad1": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad2": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad3": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Numpad0": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F1": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F2": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F3": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F4": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F5": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F6": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F7": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F8": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F9": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F10": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F11": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "F12": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Tab": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "CapsLock": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "ShiftLeft": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "ShiftRight": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "ControlLeft": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "MetaLeft": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "AltLeft": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "AltRight": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "MetaRight": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "ContextMenu": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "ControlRight": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "BracketRight": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "BracketLeft": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "PrintScreen": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Semicolon": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Quote": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Comma": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Period": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Slash": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Enter": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Backslash": {
+      "timing": [
+        [
+          120,
+          200
+        ]
+      ]
+    },
+    "Space": {
+      "timing": [
+        [
+          0,
+          120
+        ]
+      ]
+    },
+    "Backspace": {
+      "timing": [
+        [
+          200,
+          380
+        ]
+      ]
+    }
+  },
+  "id": "mv-4a9c86461f0348a98dfa50732ce60567",
+  "version": "1"
+}

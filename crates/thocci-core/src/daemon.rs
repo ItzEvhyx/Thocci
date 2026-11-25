@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::audio::{apply_low_latency_env, AudioEngine};
 use crate::control::ControlServer;
-use crate::input::create_listener;
+use crate::input::{create_listener, KeyEvent, KeyEventKind};
 use crate::paths::{
     clamp_percent, ensure_state_dir, pid_file, read_pid_file, read_saved_pack, read_saved_volume,
     remove_if_exists, write_saved_pack, write_saved_volume,
@@ -106,13 +106,21 @@ impl SharedState {
         format!("OK pack={pack_id}")
     }
 
-    fn on_key_down(&self, linux_code: u16) {
+    fn on_key_event(&self, event: KeyEvent) {
         let pack = {
             let guard = self.pack.read().unwrap_or_else(|e| e.into_inner());
             Arc::clone(&guard)
         };
-        if let Some(clip) = pack.clip_for_linux_key(linux_code) {
-            self.audio.play_clip(clip);
+        let Some(sound) = pack.sound_for_linux_key(event.code) else {
+            return;
+        };
+        match event.kind {
+            KeyEventKind::Down => self.audio.play_clip(&sound.down),
+            KeyEventKind::Up => {
+                if let Some(release) = &sound.up {
+                    self.audio.play_clip(release);
+                }
+            }
         }
     }
 }
@@ -157,7 +165,7 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
 
     let mut listener = create_listener()?;
     let key_state = Arc::clone(&state);
-    listener.start(Arc::new(move |code| key_state.on_key_down(code)))?;
+    listener.start(Arc::new(move |event| key_state.on_key_event(event)))?;
 
     let ctrl_state = Arc::clone(&state);
     let mut control = ControlServer::start(Arc::new(move |cmd| ctrl_state.handle_command(cmd)))?;

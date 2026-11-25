@@ -10,7 +10,7 @@ use std::thread::{self, JoinHandle};
 
 use evdev::{Device, EventType, KeyCode};
 
-use crate::input::{KeyDownCallback, KeyListener};
+use crate::input::{KeyCallback, KeyEvent, KeyEventKind, KeyListener};
 use crate::keymap::{self, KEY_A};
 use crate::{Error, Result};
 
@@ -31,14 +31,14 @@ impl LinuxEvdevListener {
 }
 
 impl KeyListener for LinuxEvdevListener {
-    fn start(&mut self, on_key_down: KeyDownCallback) -> Result<()> {
+    fn start(&mut self, on_key: KeyCallback) -> Result<()> {
         let devices = discover_keyboards()?;
         self.stop.store(false, Ordering::Release);
         let stop = Arc::clone(&self.stop);
 
         let handle = thread::Builder::new()
             .name("thocci-evdev".to_owned())
-            .spawn(move || poll_loop(devices, on_key_down, stop))
+            .spawn(move || poll_loop(devices, on_key, stop))
             .map_err(|err| Error::new(format!("Could not spawn evdev thread: {err}")))?;
         self.thread = Some(handle);
         Ok(())
@@ -127,11 +127,7 @@ fn is_event_node(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn poll_loop(
-    mut devices: Vec<OpenedKeyboard>,
-    on_key_down: KeyDownCallback,
-    stop: Arc<AtomicBool>,
-) {
+fn poll_loop(mut devices: Vec<OpenedKeyboard>, on_key: KeyCallback, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Acquire) {
         if devices.is_empty() {
             log::error!("All keyboard devices disconnected");
@@ -171,7 +167,7 @@ fn poll_loop(
             if (pfd.revents & libc::POLLIN) == 0 {
                 continue;
             }
-            if !drain_device(&mut devices[idx], &on_key_down) {
+            if !drain_device(&mut devices[idx], &on_key) {
                 disconnected.push(idx);
             }
         }
@@ -183,20 +179,25 @@ fn poll_loop(
     }
 }
 
-fn drain_device(kb: &mut OpenedKeyboard, on_key_down: &KeyDownCallback) -> bool {
+fn drain_device(kb: &mut OpenedKeyboard, on_key: &KeyCallback) -> bool {
     loop {
         match kb.device.fetch_events() {
             Ok(events) => {
                 for ev in events {
-                    // value == 1 is initial press (0 = release, 2 = auto-repeat).
-                    if ev.event_type() != EventType::KEY || ev.value() != 1 {
+                    if ev.event_type() != EventType::KEY {
                         continue;
                     }
+                    // value: 1 = initial press, 0 = release, 2 = auto-repeat (ignored).
+                    let kind = match ev.value() {
+                        1 => KeyEventKind::Down,
+                        0 => KeyEventKind::Up,
+                        _ => continue,
+                    };
                     let code = ev.code();
                     if keymap::is_ignored(code) {
                         continue;
                     }
-                    on_key_down(code);
+                    on_key(KeyEvent { code, kind });
                 }
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => return true,

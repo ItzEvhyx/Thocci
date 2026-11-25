@@ -1,7 +1,7 @@
 //! Cross-platform global keyboard capture.
 //!
-//! Each platform backend invokes `on_key_down(linux_keycode)` once per physical
-//! key press (auto-repeat is ignored on every OS) and skips ignored keys
+//! Each platform backend delivers [`KeyEvent`] (`Down` / `Up`) with Linux evdev
+//! keycodes, ignores OS key auto-repeat on every OS, and skips ignored keys
 //! (`CapsLock`, `NumLock`, `ScrollLock`, `Super`/`Win`/`Cmd`).
 
 use std::sync::Arc;
@@ -15,10 +15,22 @@ mod macos;
 #[cfg(windows)]
 mod windows;
 
-pub type KeyDownCallback = Arc<dyn Fn(u16) + Send + Sync + 'static>;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyEventKind {
+    Down,
+    Up,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyEvent {
+    pub code: u16,
+    pub kind: KeyEventKind,
+}
+
+pub type KeyCallback = Arc<dyn Fn(KeyEvent) + Send + Sync + 'static>;
 
 pub trait KeyListener: Send {
-    fn start(&mut self, on_key_down: KeyDownCallback) -> Result<()>;
+    fn start(&mut self, on_key: KeyCallback) -> Result<()>;
     fn stop(&mut self);
 }
 

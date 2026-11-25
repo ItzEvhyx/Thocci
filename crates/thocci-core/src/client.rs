@@ -129,9 +129,11 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
                 log_path.display()
             )));
         }
-        if let Some(reply) = send_command("ping", Duration::from_millis(250)) {
-            if reply.starts_with("OK") {
-                return Ok(status());
+        if port_file().is_file() {
+            if let Some(reply) = send_command("ping", Duration::from_millis(250)) {
+                if reply.starts_with("OK") {
+                    return Ok(status());
+                }
             }
         }
     }

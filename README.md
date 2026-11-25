@@ -47,12 +47,32 @@ thocci uninstall         # stop daemon and remove Thocci
 
 ## Built-in Soundpacks
 
+All 20 soundpacks live in `assets/soundpacks/` and are embedded directly into `thocci` at build time (supporting both Mechvibes v1 and v2 press+release formats, `.ogg`, `.wav`, and `.mp3`):
+
 | Command | Pack |
 |---------|------|
 | `thocci cherry-mx` | CherryMX Black - ABS keycaps (default) |
 | `thocci banana-split` | Banana Split Lubed by Akira |
+| `thocci pack aula-f75-leobog-reaper` | aula f75 max leobog reaper switch |
+| `thocci pack clicky-perfect` | clicky perfect |
+| `thocci pack creamy` | creamy (still getting better) |
+| `thocci pack fortnite-keyboard` | fortnite keyboard |
+| `thocci pack gravastar-v75` | GravaStar V75 (Ploszy ASMR rip) |
+| `thocci pack hayyoths-keyboard` | Hayyoth's keyboard |
+| `thocci pack hyperx-alloy-cherry-mx-blue` | Hyperx Alloy Cherry MX Blue |
+| `thocci pack kailh-saker-mini` | CnT - Kailh Saker Mini Low Profile |
+| `thocci pack keychron-dream-fn-v2` | Myilo Keychron Dream FN V2 |
+| `thocci pack kiiboom-matcha-latte` | Presskey - KiiBOOM Matcha Latte |
+| `thocci pack leobog-hi75-reaper` | LEOBOG Hi75 (Reaper Switches) |
+| `thocci pack nuphy-halo75-v2-raspberry` | NuPhy Halo75 V2 (Raspberry Switches) |
+| `thocci pack orange-deluxe` | Orange deluxe - Press + Release separated |
+| `thocci pack satisfaction-bubblepop` | Satisfaction - Bubblepop |
+| `thocci pack typewriter` | TypeWriter |
+| `thocci pack wallhack-k-001` | Wallhack K-001 |
+| `thocci pack womier-sk75-tmr` | womier sk75 tmr |
+| `thocci pack wooden-keyboard` | Wooden Keyboard |
 
-Switching soundpacks and adjusting volume happen live while Thocci is running.
+Run `thocci packs` to list all packs. Switching soundpacks and adjusting volume happen live while Thocci is running.
 
 ## Architecture
 
@@ -60,6 +80,7 @@ Thocci is organized as a Rust workspace so the CLI stays lightweight and headles
 
 ```text
 Thocci/
+├── assets/soundpacks/ # 20 built-in Mechvibes v1 & v2 soundpacks (auto-embedded)
 ├── crates/
 │   ├── thocci-core/   # Soundpack decoder (Symphonia), low-latency mixer (cpal),
 │   │                  # OS key listeners (evdev / Win32 hook / CGEventTap),

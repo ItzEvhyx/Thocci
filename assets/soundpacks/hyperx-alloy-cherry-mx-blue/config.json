@@ -1,0 +1,691 @@
+{
+  "config_version": "2",
+  "id": "mv-c0cc963b02574868aad1ebcca843abeb",
+  "name": "Hyperx Alloy Cherry MX Blue",
+  "author": "AACON",
+  "description": "MX Blue",
+  "tags": [],
+  "definition_method": "single",
+  "audio_file": "audio.ogg",
+  "icon": "icon.jpg",
+  "soundpack_type": "Keyboard",
+  "options": {
+    "recommended_volume": 1,
+    "random_pitch": false
+  },
+  "definitions": {
+    "KeyQ": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyE": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyT": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyU": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyO": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "BracketLeft": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyS": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyF": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyH": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyK": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "Semicolon": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyZ": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyC": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyB": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyM": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "Period": {
+      "timing": [
+        [
+          0,
+          200
+        ]
+      ]
+    },
+    "KeyW": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyR": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyY": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyI": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyP": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "BracketRight": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyA": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyD": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyG": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyJ": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyL": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "Quote": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyX": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyV": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "KeyN": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "Comma": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "Slash": {
+      "timing": [
+        [
+          200,
+          400
+        ]
+      ]
+    },
+    "F1": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F2": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F3": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F4": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F5": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F6": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F7": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F8": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F9": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F10": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F11": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "F12": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit1": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit2": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit3": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit4": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit5": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit6": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit7": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit8": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit9": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Digit0": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Home": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ArrowUp": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "PageUp": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ArrowLeft": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ArrowRight": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "End": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ArrowDown": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "PageDown": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Numpad0": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Equal": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Backspace": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Backslash": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Enter": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ShiftLeft": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ControlLeft": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ContextMenu": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "MetaLeft": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "AltLeft": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "key": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "CapsLock": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Tab": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Backquote": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Escape": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "PrintScreen": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "ScrollLock": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Pause": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Insert": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Delete": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    },
+    "Space": {
+      "timing": [
+        [
+          400,
+          550
+        ]
+      ]
+    }
+  },
+  "version": "2"
+}

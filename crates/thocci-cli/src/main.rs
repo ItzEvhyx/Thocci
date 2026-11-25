@@ -250,6 +250,12 @@ fn cmd_switch_pack(pack_id: &str) -> u8 {
 
 fn cmd_packs() -> u8 {
     let active = paths::read_saved_pack();
+    let width = soundpack::BUILTIN_PACKS
+        .iter()
+        .map(|p| p.id.len())
+        .max()
+        .unwrap_or(14)
+        + 2;
     for pack in soundpack::BUILTIN_PACKS {
         let marker = if pack.id == active { "*" } else { " " };
         let default_tag = if pack.id == DEFAULT_PACK_ID {
@@ -258,7 +264,7 @@ fn cmd_packs() -> u8 {
             ""
         };
         println!(
-            "{marker} {:<14} {}{default_tag}",
+            "{marker} {:<width$} {}{default_tag}",
             pack.id, pack.display_name
         );
     }

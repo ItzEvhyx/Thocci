@@ -1,0 +1,576 @@
+{
+  "config_version": "2",
+  "name": "womier sk75 tmr",
+  "author": "Laika/Raika",
+  "description": "maybe bad",
+  "tags": [
+    "modded",
+    "loud",
+    "lubed"
+  ],
+  "category": "realistic",
+  "sound_profiles": [
+    "clacky"
+  ],
+  "source_url": "https://youtu.be/HByCkJRBfA0?si=y6NluZuWpqBOIRnv",
+  "definition_method": "multi",
+  "audio_file": "3.mp3",
+  "soundpack_type": "Keyboard",
+  "options": {
+    "recommended_volume": 1,
+    "random_pitch": false
+  },
+  "definitions": {
+    "Digit1": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "Digit2": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Digit3": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Digit4": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "Digit5": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Space": {
+      "audio_file": "spacebar.mp3",
+      "timing": [
+        [
+          0,
+          240
+        ]
+      ]
+    },
+    "Digit6": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "Digit7": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Digit8": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Digit9": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "Digit0": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Minus": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Equal": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyQ": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "KeyW": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyE": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyR": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyT": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyY": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyU": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyI": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyO": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "KeyP": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "BracketLeft": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "BracketRight": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Backslash": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyA": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyS": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "KeyD": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyF": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyB": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyC": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyX": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyZ": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyV": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyN": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyM": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Comma": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Period": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "Slash": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "ControlLeft": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "MetaLeft": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "AltLeft": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "AltRight": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "MetaRight": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "ContextMenu": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "ControlRight": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "ShiftRight": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Enter": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Backspace": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Backquote": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Tab": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "CapsLock": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "ShiftLeft": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "KeyG": {
+      "audio_file": "5.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyH": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "KeyJ": {
+      "audio_file": "2.mp3",
+      "timing": [
+        [
+          0,
+          264
+        ]
+      ]
+    },
+    "KeyK": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    "KeyL": {
+      "audio_file": "4.mp3",
+      "timing": [
+        [
+          0,
+          168
+        ]
+      ]
+    },
+    "Semicolon": {
+      "audio_file": "3.mp3",
+      "timing": [
+        [
+          0,
+          216
+        ]
+      ]
+    },
+    "Quote": {
+      "audio_file": "1.mp3",
+      "timing": [
+        [
+          0,
+          312
+        ]
+      ]
+    }
+  },
+  "id": "mv-8b3c3cb2b8e1456d92477280b22a1a76",
+  "version": "1"
+}
