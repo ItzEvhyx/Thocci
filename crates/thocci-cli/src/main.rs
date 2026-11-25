@@ -1,4 +1,4 @@
-//! `thocci` — Mechvibes-style mechanical keyboard sounds CLI & daemon.
+//! `thocci` — Mechanical keyboard sounds CLI & daemon.
 //!
 //! Run `thocci`, `thocci --help`, or `thocci guide` for the colored terminal guide.
 
@@ -19,7 +19,7 @@ use thocci_core::soundpack;
 #[command(
     name = "thocci",
     version = thocci_core::VERSION,
-    about = "Mechvibes-style mechanical keyboard sounds for Linux, Windows, and macOS",
+    about = "Mechanical keyboard sounds for Linux, Windows, and macOS",
     disable_help_flag = true,
     disable_help_subcommand = true
 )]
@@ -44,7 +44,7 @@ struct Cli {
 enum Command {
     /// Start keystroke sounds in the background
     On {
-        /// Path to a custom Mechvibes soundpack directory
+        /// Path to a custom soundpack directory
         #[arg(long)]
         pack: Option<PathBuf>,
 
@@ -58,7 +58,7 @@ enum Command {
 
     /// Toggle keystroke sounds on/off
     Toggle {
-        /// Path to a custom Mechvibes soundpack directory
+        /// Path to a custom soundpack directory
         #[arg(long)]
         pack: Option<PathBuf>,
 

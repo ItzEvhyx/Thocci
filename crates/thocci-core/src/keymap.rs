@@ -1,23 +1,21 @@
 //! Keycode translation.
 //!
-//! Every input backend reports **Linux evdev keycodes** (`input-event-codes.h`),
-//! the same contract Mechy used. Mechvibes soundpacks, however, key their
-//! `defines` by libuiohook codes. Those match Linux for the main block
-//! (1..=88) but differ for extended keys: Up is 57416 in a pack and 103 on
-//! Linux. Mechy looked up raw Linux codes, so arrows, Home/End, right Ctrl/Alt
-//! and friends were silent; [`mechvibes_code`] fixes that.
+//! Every input backend reports **Linux evdev keycodes** (`input-event-codes.h`).
+//! v1 soundpacks key their `defines` by libuiohook codes, which match Linux for
+//! the main block (1..=88) and use extended codes for arrows, Home/End,
+//! right Ctrl/Alt, etc. [`uiohook_code`] maps Linux codes to libuiohook codes;
+//! [`dom_code_to_linux`] maps v2 DOM `KeyboardEvent.code` strings.
 
 /// Linux `KEY_A`: a device that reports it is treated as a keyboard.
 pub const KEY_A: u16 = 30;
 
-/// Keys that never click, matching Mechy: Caps/Num/Scroll Lock and the
-/// Super/Windows/Command keys.
+/// Keys that never click: Caps/Num/Scroll Lock and the Super/Windows/Command keys.
 pub fn is_ignored(linux_code: u16) -> bool {
     matches!(linux_code, 58 | 69 | 70 | 125 | 126)
 }
 
-/// Linux keycode -> Mechvibes (libuiohook) keycode used in pack `defines`.
-pub fn mechvibes_code(linux_code: u16) -> Option<u32> {
+/// Linux keycode -> libuiohook keycode used in v1 pack `defines`.
+pub fn uiohook_code(linux_code: u16) -> Option<u32> {
     let code = match linux_code {
         1..=88 => return Some(u32::from(linux_code)),
         96 => 3612,   // KP Enter
@@ -273,7 +271,7 @@ pub fn macos_to_linux(keycode: u16) -> Option<u16> {
     Some(code)
 }
 
-/// DOM `KeyboardEvent.code` name (used by Mechvibes v2 packs) -> Linux keycode.
+/// DOM `KeyboardEvent.code` name (used by v2 soundpacks) -> Linux keycode.
 pub fn dom_code_to_linux(name: &str) -> Option<u16> {
     let code = match name {
         "Escape" => 1,
@@ -397,17 +395,17 @@ mod tests {
     #[test]
     fn main_block_is_identity() {
         for code in 1..=88u16 {
-            assert_eq!(mechvibes_code(code), Some(u32::from(code)));
+            assert_eq!(uiohook_code(code), Some(u32::from(code)));
         }
     }
 
     #[test]
-    fn arrows_map_to_mechvibes_codes() {
-        assert_eq!(mechvibes_code(103), Some(57416));
-        assert_eq!(mechvibes_code(105), Some(57419));
-        assert_eq!(mechvibes_code(106), Some(57421));
-        assert_eq!(mechvibes_code(108), Some(57424));
-        assert_eq!(mechvibes_code(500), None);
+    fn arrows_map_to_uiohook_codes() {
+        assert_eq!(uiohook_code(103), Some(57416));
+        assert_eq!(uiohook_code(105), Some(57419));
+        assert_eq!(uiohook_code(106), Some(57421));
+        assert_eq!(uiohook_code(108), Some(57424));
+        assert_eq!(uiohook_code(500), None);
     }
 
     #[test]

@@ -1,8 +1,8 @@
 # Thocci
 
-Mechvibes-style mechanical keyboard sounds for **Linux**, **Windows**, and **macOS**, written in Rust with a Tauri desktop shell.
+Mechanical keyboard sounds for **Linux**, **Windows**, and **macOS**, written in Rust with a Tauri desktop shell.
 
-Every physical keystroke plays a low-latency clip from an embedded or custom Mechvibes v1/v2 soundpack (including separate press + release audio for v2 packs). No Python, no `ffmpeg`, and no external asset folder required — all 20 built-in soundpacks are compiled directly into the standalone `thocci` binary.
+Every physical keystroke plays a low-latency clip from an embedded or custom v1/v2 soundpack (including separate press + release audio for v2 packs). No Python, no `ffmpeg`, and no external asset folder required — all 20 built-in soundpacks are compiled directly into the standalone `thocci` binary.
 
 ## Installation
 
@@ -44,7 +44,7 @@ Run `thocci`, `thocci --help`, or `thocci guide` in your terminal at any time to
 |---------|--------------|
 | `thocci on` | Start keystroke sounds in the background |
 | `thocci on --volume <0-100>` | Start at a specific initial volume |
-| `thocci on --pack <dir>` | Start using a custom Mechvibes v1/v2 pack folder |
+| `thocci on --pack <dir>` | Start using a custom soundpack folder |
 | `thocci off` | Stop the background daemon |
 | `thocci toggle` | Flip sounds on/off (ideal to bind to a global hotkey) |
 | `thocci status` | Show live running state, PID, volume, and active pack |
@@ -87,7 +87,7 @@ thocci off                    # Stop the background daemon
 
 ## Built-in Soundpacks
 
-All 20 soundpacks live in `assets/soundpacks/` and are embedded directly into `thocci` at build time (supporting both Mechvibes v1 and v2 press+release formats, `.ogg`, `.wav`, and `.mp3`):
+All 20 soundpacks live in `assets/soundpacks/` and are embedded directly into `thocci` at build time (supporting both v1 and v2 press+release formats, `.ogg`, `.wav`, and `.mp3`):
 
 | Pack ID | Soundpack Name | Quick Switch Example |
 |---------|----------------|----------------------|
@@ -122,7 +122,7 @@ Thocci is organized as a Rust workspace so the CLI stays lightweight and headles
 
 ```text
 Thocci/
-├── assets/soundpacks/ # 20 built-in Mechvibes v1 & v2 soundpacks (auto-embedded)
+├── assets/soundpacks/ # 20 built-in v1 & v2 soundpacks (auto-embedded)
 ├── crates/
 │   ├── thocci-core/   # Soundpack decoder (Symphonia), low-latency mixer (cpal),
 │   │                  # OS key listeners (evdev / Win32 hook / CGEventTap),

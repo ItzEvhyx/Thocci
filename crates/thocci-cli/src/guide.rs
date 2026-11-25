@@ -28,7 +28,7 @@ pub fn print_guide<W: Write>(w: &mut W, color: bool) -> io::Result<()> {
     if color {
         writeln!(
             w,
-            "  {}Thocci v{}{} {}— Mechvibes-style mechanical keyboard sounds in Rust.{}",
+            "  {}Thocci v{}{} {}— Mechanical keyboard sounds in Rust.{}",
             term::BOLD,
             thocci_core::VERSION,
             term::RESET,
@@ -45,7 +45,7 @@ pub fn print_guide<W: Write>(w: &mut W, color: bool) -> io::Result<()> {
     } else {
         writeln!(
             w,
-            "  Thocci v{} — Mechvibes-style mechanical keyboard sounds in Rust.",
+            "  Thocci v{} — Mechanical keyboard sounds in Rust.",
             thocci_core::VERSION
         )?;
         writeln!(
@@ -66,7 +66,7 @@ pub fn print_guide<W: Write>(w: &mut W, color: bool) -> io::Result<()> {
             ),
             (
                 "thocci on --pack <dir>",
-                "Start using a custom Mechvibes folder",
+                "Start using a custom soundpack folder",
             ),
             ("thocci off", "Stop the background daemon"),
             ("thocci toggle", "Flip on/off (ideal for a hotkey)"),

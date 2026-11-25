@@ -1,12 +1,12 @@
-//! Mechvibes v1 & v2 soundpack loader and auto-embedded built-in registry.
+//! v1 & v2 soundpack loader and auto-embedded built-in registry.
 //!
 //! All soundpacks under `assets/soundpacks/` are embedded directly into the
 //! binary at compile time via `build.rs` so `thocci` stays a standalone
 //! executable without external `assets/` folders or `ffmpeg`.
 //!
 //! Supports:
-//! - Mechvibes v1 (`defines` keyed by numeric libuiohook codes, `single` & `multi`)
-//! - Mechvibes v2 (`config_version: "2"`, `definitions` keyed by DOM
+//! - v1 packs (`defines` keyed by numeric libuiohook codes, `single` & `multi`)
+//! - v2 packs (`config_version: "2"`, `definitions` keyed by DOM
 //!   `KeyboardEvent.code` names, `[start_ms, end_ms]` press & optional release
 //!   timings, `single` & `multi`, plus `"Generic"`/`"key"` fallbacks)
 //! - Audio formats decoded in pure Rust via Symphonia: `.ogg`, `.wav`, `.mp3`.
@@ -157,13 +157,13 @@ pub struct SoundpackInfo {
     pub path: Option<PathBuf>,
 }
 
-/// Loaded Mechvibes v1 or v2 soundpack ready for fast keycode lookup.
+/// Loaded v1 or v2 soundpack ready for fast keycode lookup.
 pub struct Soundpack {
     info: SoundpackInfo,
-    /// Direct Linux keycode map (populated by Mechvibes v2 packs).
+    /// Direct Linux keycode map (populated by v2 packs).
     linux_keys: HashMap<u16, KeySound>,
-    /// Numeric Mechvibes (libuiohook) keycode map (populated by v1 packs).
-    mechvibes_keys: HashMap<u32, KeySound>,
+    /// Numeric libuiohook keycode map (populated by v1 packs).
+    uiohook_keys: HashMap<u32, KeySound>,
     /// Optional fallback sound for v2 packs defining `"Generic"` or `"key"`.
     fallback: Option<KeySound>,
 }
@@ -252,7 +252,7 @@ impl Soundpack {
         Self::load_from_source(&PackSource::Embedded(embedded), target_rate)
     }
 
-    /// Load a custom Mechvibes v1 or v2 soundpack directory from disk.
+    /// Load a custom v1 or v2 soundpack directory from disk.
     pub fn load_from_dir(
         dir: &Path,
         pack_id: Option<&str>,
@@ -322,13 +322,13 @@ impl Soundpack {
             return Ok(Self {
                 info,
                 linux_keys,
-                mechvibes_keys: HashMap::new(),
+                uiohook_keys: HashMap::new(),
                 fallback,
             });
         }
 
         let defines = raw.defines.unwrap_or_default();
-        let mechvibes_keys = if key_define_type == "single" {
+        let uiohook_keys = if key_define_type == "single" {
             let sound_name = raw.sound.filter(|name| !name.is_empty()).ok_or_else(|| {
                 Error::new("Single-type soundpack requires a 'sound' field in config.json")
             })?;
@@ -337,7 +337,7 @@ impl Soundpack {
             load_v1_multi(source, &defines, target_rate)?
         };
 
-        if mechvibes_keys.is_empty() {
+        if uiohook_keys.is_empty() {
             return Err(Error::new(format!(
                 "No playable key definitions in soundpack '{}'",
                 info.name
@@ -347,7 +347,7 @@ impl Soundpack {
         Ok(Self {
             info,
             linux_keys: HashMap::new(),
-            mechvibes_keys,
+            uiohook_keys,
             fallback: None,
         })
     }
@@ -360,7 +360,7 @@ impl Soundpack {
         if !self.linux_keys.is_empty() {
             self.linux_keys.len()
         } else {
-            self.mechvibes_keys.len()
+            self.uiohook_keys.len()
         }
     }
 
@@ -369,12 +369,12 @@ impl Soundpack {
         if let Some(sound) = self.linux_keys.get(&linux_code) {
             return Some(sound);
         }
-        if let Some(mv_code) = keymap::mechvibes_code(linux_code) {
-            if let Some(sound) = self.mechvibes_keys.get(&mv_code) {
+        if let Some(uh_code) = keymap::uiohook_code(linux_code) {
+            if let Some(sound) = self.uiohook_keys.get(&uh_code) {
                 return Some(sound);
             }
         }
-        if let Some(sound) = self.mechvibes_keys.get(&u32::from(linux_code)) {
+        if let Some(sound) = self.uiohook_keys.get(&u32::from(linux_code)) {
             return Some(sound);
         }
         self.fallback.as_ref()
