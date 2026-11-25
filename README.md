@@ -1,165 +1,75 @@
-# Thocci
+# ![Thocci — Ink perched on a black titanium Escape key](assets/readme/thocci-banner.webp)
 
-Mechanical keyboard sounds for **Linux**, **Windows**, and **macOS**, written in Rust with a Tauri desktop shell.
+<p align="center">
+  <strong>Mechanical keyboard sounds for Windows, Linux, and macOS.</strong>
+</p>
 
-Every physical keystroke plays a low-latency clip from an embedded or custom v1/v2 soundpack (including separate press + release audio for v2 packs). No Python, no `ffmpeg`, and no external asset folder required — all 20 built-in soundpacks are compiled directly into the standalone `thocci` binary.
+<p align="center">
+  <a href="#installation">Install</a> ·
+  <a href="#terminal-guide">Terminal guide</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#meet-ink">Meet Ink</a>
+</p>
+
+Thocci gives your physical keyboard a new sound. Choose from 20 built-in soundpacks, from Cherry MX Black and soft creamy taps to a classic typewriter. Switch packs or adjust the volume while you type, or bring your own soundpack. Packs with separate press and release sounds can play both.
 
 ## Installation
 
-### Linux & macOS (Bash / Zsh / Fish)
+The installers download the prebuilt CLI from [GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases). Run them once a release with a download for your platform is available.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.sh -o /tmp/thocci-install.sh && bash /tmp/thocci-install.sh
-```
+### Windows
 
-### Windows (PowerShell)
+Open PowerShell on Windows (x64) and run the installer.
 
 ```powershell
-irm https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.ps1 | iex
+Invoke-RestMethod https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.ps1 | Invoke-Expression
 ```
 
-Both installers place `thocci` in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows) and verify the release archive checksum.
+The installer places `thocci.exe` in `%USERPROFILE%\.local\bin` and adds that folder to your user `PATH`. Open a new PowerShell window if `thocci` is unavailable in the current one.
 
-### Platform permissions
+### Linux and macOS
 
-- **Linux**: Add your user to the `input` group once, then log out and back in:
-  ```bash
-  sudo usermod -aG input "$USER"
-  ```
-- **Windows**: Runs out of the box via a low-level keyboard hook. Elevated apps (some game launchers/admin terminals) only deliver hooks if Thocci is also run elevated.
-- **macOS**: Grant **Input Monitoring** (or **Accessibility**) permission to your terminal or Thocci in *System Settings → Privacy & Security*.
+Run these commands in your terminal. The installer supports x64 and ARM64 Linux systems with glibc, as well as Intel and Apple silicon Macs.
 
----
+```bash
+curl -fsSLo thocci-install.sh https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.sh &&
+  bash ./thocci-install.sh
+```
 
-## Terminal Guide
+The installer places `thocci` in `~/.local/bin`. If your shell cannot find `thocci`, use `~/.local/bin/thocci` or add that directory to your `PATH`.
 
-Run `thocci`, `thocci --help`, or `thocci guide` in your terminal at any time to open the built-in, color-coded terminal guide (inspired by [ezCMD](https://github.com/ItzEvhyx/ezCMD)).
+- **Linux** requires access to keyboard input devices. Run `sudo usermod -aG input "$USER"`, then sign out and back in.
+- **macOS** requires keyboard access. Under **System Settings → Privacy & Security → Input Monitoring**, allow your terminal or the Thocci binary, then reopen the terminal.
 
-> [!NOTE]
-> **Color-Coded Output:** On interactive terminals, commands are highlighted in **bold `#96d0fb`**, `<placeholders>` in **yellow**, active/running indicators in **green**, volume values in **amber**, and errors in **red**. Color automatically switches off in pipes, when `NO_COLOR` is set, or when `--plain` is passed.
+## Terminal guide
 
-### Engine Controls
+Start Thocci and type a few keys. To try a softer sound, switch to the Creamy pack and set the volume to 40%.
+
+```bash
+thocci on
+thocci creamy
+thocci volume 40
+```
 
 | Command | What it does |
-|---------|--------------|
-| `thocci on` | Start keystroke sounds in the background |
-| `thocci on --volume <0-100>` | Start at a specific initial volume |
-| `thocci on --pack <dir>` | Start using a custom soundpack folder |
-| `thocci off` | Stop the background daemon |
-| `thocci toggle` | Flip sounds on/off (ideal to bind to a global hotkey) |
-| `thocci status` | Show live running state, PID, volume, and active pack |
-
-### Volume & Soundpack Switching
-
-| Command | What it does |
-|---------|--------------|
-| `thocci volume <0-100>` | Change volume live (or save while stopped) |
-| `thocci packs` | List all 20 built-in soundpacks with the active one highlighted |
-| `thocci <pack>` | Switch soundpacks live by **slug**, **display name**, or **unique partial match** |
-| `thocci pack <query>` | Explicit form of live pack switching |
-| `thocci cherry-mx` | Quick alias for the Cherry MX pack (default) |
-| `thocci banana-split` | Quick alias for the Banana Split pack |
-
-### Everyday Examples
-
-```bash
-thocci on                     # Start typing with Cherry MX (default)
-thocci volume 60              # Lower volume to 60% live
-thocci packs                  # Browse all 20 built-in soundpacks
-thocci creamy                 # Switch pack by slug
-thocci Wooden Keyboard        # Switch pack by full display name
-thocci matcha                 # Switch pack by unique partial match
-thocci status                 # Check PID, volume, and active pack
-thocci toggle                 # Flip on/off from a shortcut or terminal
-thocci off                    # Stop the background daemon
-```
-
-### Flags & Maintenance
-
-| Command / Flag | What it does |
-|----------------|--------------|
-| `thocci guide` / `thocci --help` | Open the colorized Terminal Guide |
-| `thocci --plain <cmd>` | Disable ANSI colors (useful for scripts and logs) |
-| `thocci --version` | Print installed Thocci version |
-| `thocci uninstall` | Stop daemon and remove the Thocci binary and state files (`-y` skips prompt) |
-
----
-
-## Built-in Soundpacks
-
-All 20 soundpacks live in `assets/soundpacks/` and are embedded directly into `thocci` at build time (supporting both v1 and v2 press+release formats, `.ogg`, `.wav`, and `.mp3`):
-
-| Pack ID | Soundpack Name | Quick Switch Example |
-|---------|----------------|----------------------|
-| `cherry-mx` | CherryMX Black - ABS keycaps *(default)* | `thocci cherry-mx` |
-| `banana-split` | Banana Split Lubed by Akira | `thocci banana-split` |
-| `aula-f75-leobog-reaper` | aula f75 max leobog reaper switch | `thocci aula` |
-| `clicky-perfect` | clicky perfect | `thocci clicky` |
-| `creamy` | creamy (still getting better) | `thocci creamy` |
-| `fortnite-keyboard` | fortnite keyboard | `thocci fortnite` |
-| `gravastar-v75` | GravaStar V75 (Ploszy ASMR rip) | `thocci gravastar` |
-| `hayyoths-keyboard` | Hayyoth's keyboard | `thocci hayyoth` |
-| `hyperx-alloy-cherry-mx-blue` | Hyperx Alloy Cherry MX Blue | `thocci hyperx` |
-| `kailh-saker-mini` | CnT - Kailh Saker Mini Low Profile | `thocci kailh` |
-| `keychron-dream-fn-v2` | Myilo Keychron Dream FN V2 | `thocci keychron` |
-| `kiiboom-matcha-latte` | Presskey - KiiBOOM Matcha Latte | `thocci matcha` |
-| `leobog-hi75-reaper` | LEOBOG Hi75 (Reaper Switches) | `thocci hi75` |
-| `nuphy-halo75-v2-raspberry` | NuPhy Halo75 V2 (Raspberry Switches) | `thocci nuphy` |
-| `orange-deluxe` | Orange deluxe - Press + Release separated | `thocci orange` |
-| `satisfaction-bubblepop` | Satisfaction - Bubblepop | `thocci bubblepop` |
-| `typewriter` | TypeWriter | `thocci typewriter` |
-| `wallhack-k-001` | Wallhack K-001 | `thocci wallhack` |
-| `womier-sk75-tmr` | womier sk75 tmr | `thocci womier` |
-| `wooden-keyboard` | Wooden Keyboard | `thocci Wooden Keyboard` |
-
-Switching soundpacks and adjusting volume happen live while Thocci is running.
-
----
-
-## Architecture
-
-Thocci is organized as a Rust workspace so the CLI stays lightweight and headless while the Tauri desktop app shares the exact same engine:
-
-```text
-Thocci/
-├── assets/soundpacks/ # 20 built-in v1 & v2 soundpacks (auto-embedded)
-├── crates/
-│   ├── thocci-core/   # Soundpack decoder (Symphonia), low-latency mixer (cpal),
-│   │                  # OS key listeners (evdev / Win32 hook / CGEventTap),
-│   │                  # daemon, localhost TCP control server & client
-│   └── thocci-cli/    # Standalone `thocci` CLI + daemon binary & terminal guide
-├── src-tauri/         # Tauri v2 desktop shell wired to `thocci-core`
-├── ui/                # Minimal placeholder UI (desktop UI coming next)
-├── install.sh         # One-line Linux/macOS installer
-└── install.ps1        # One-line Windows PowerShell installer
-```
-
-### Runtime state & logs
-
-- **Linux**: `~/.local/state/thocci/` (`$XDG_STATE_HOME/thocci`)
-- **Windows**: `%LOCALAPPDATA%\thocci\`
-- **macOS**: `~/Library/Application Support/thocci/`
-
-Daemon logs are written to `thocci.log` inside the state directory.
-
-## Building from source
-
-### CLI only (no WebKit needed)
-
-```bash
-# Linux requires ALSA headers (e.g. libasound2-dev / alsa-lib)
-cargo build --release
-./target/release/thocci on
-```
-
-### Tauri desktop shell
-
-```bash
-cargo build -p thocci-app
-# or run directly:
-cargo run -p thocci-app
-```
+| --- | --- |
+| `thocci on` / `thocci off` | Start or stop keyboard sounds. |
+| `thocci toggle` | Turn sounds on or off with one command. |
+| `thocci packs` | Browse the 20 built-in soundpacks. |
+| `thocci pack "Wooden Keyboard"` | Switch by pack ID, display name, or unique partial match. `thocci creamy` is the short form. |
+| `thocci volume 40` | Set the volume from 0 to 100. |
+| `thocci on --pack "./my-pack"` | Start with a custom soundpack folder. |
+| `thocci guide` / `thocci --help` | Open the built-in terminal guide. |
+| `thocci --plain guide` | Open the guide without ANSI colors. |
 
 ## Privacy
 
-Thocci only reads physical keycodes to trigger audio playback. It never logs, stores, or transmits what you type.
+**Thocci has no data collection or telemetry.** While sounds are enabled, it listens for presses and releases on your physical keyboard solely to play the corresponding sounds. Playback happens on your device. Thocci never logs, stores, or sends what you type.
+
+## Meet Ink
+
+Ink is Thocci’s cat-eared mascot. His favorite spot is the spacebar.
+
+![Ink perched, peeking, bouncing, pressing, stretching, and napping on black titanium keycaps](assets/readme/ink-character-sheet.webp)
+
+Thocci is open source under the [MIT License](LICENSE).
