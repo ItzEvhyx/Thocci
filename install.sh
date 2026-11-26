@@ -151,8 +151,8 @@ else
     TAR_URL=""
     SHA_URL=""
     if [ -n "${LATEST_JSON}" ]; then
-        TAR_URL="$(printf '%s\n' "${LATEST_JSON}" | grep '"browser_download_url"' | grep -v '\.sha256"' | grep "/thocci-[^/]*${ASSET_TARGET}\.tar\.gz" | head -n 1 | cut -d '"' -f 4 || true)"
-        SHA_URL="$(printf '%s\n' "${LATEST_JSON}" | grep '"browser_download_url"' | grep "/thocci-[^/]*${ASSET_TARGET}\.tar\.gz\.sha256" | head -n 1 | cut -d '"' -f 4 || true)"
+        TAR_URL="$(printf '%s\n' "${LATEST_JSON}" | grep '"browser_download_url"' | grep -v '\.sha256"' | grep -v '/thocci-desktop-' | grep "/thocci-[^/]*${ASSET_TARGET}\.tar\.gz" | head -n 1 | cut -d '"' -f 4 || true)"
+        SHA_URL="$(printf '%s\n' "${LATEST_JSON}" | grep '"browser_download_url"' | grep -v '/thocci-desktop-' | grep "/thocci-[^/]*${ASSET_TARGET}\.tar\.gz\.sha256" | head -n 1 | cut -d '"' -f 4 || true)"
     fi
     if [ -z "${TAR_URL}" ]; then
         TAR_URL="https://github.com/${REPO}/releases/download/${FALLBACK_VERSION}/thocci-${FALLBACK_VERSION}-${ASSET_TARGET}.tar.gz"
