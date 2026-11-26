@@ -87,5 +87,55 @@ fn cli_offline_commands_work_end_to_end() {
     let out = thocci_cmd(&state).arg("--welcome").output().unwrap();
     assert!(out.status.success());
 
+    // Imported WAV soundpack created in the shared state directory is visible and selectable via CLI.
+    let wav_path = state.join("desk_click.wav");
+    std::fs::write(&wav_path, build_test_wav(44_100, 1_500)).unwrap();
+    let imported = {
+        std::env::set_var("THOCCI_STATE_DIR", &state);
+        thocci_core::soundpack::import_wav(&wav_path, Some("Desk Click")).unwrap()
+    };
+
+    let out = thocci_cmd(&state).arg("packs").output().unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&imported.id) && stdout.contains("Desk Click"),
+        "expected imported pack in `thocci packs`, got: {stdout}"
+    );
+
+    let out = thocci_cmd(&state).arg(&imported.id).output().unwrap();
+    assert!(out.status.success());
+    let out = thocci_cmd(&state).arg("status").output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("stopped (pack {})", imported.id)),
+        "expected imported pack in status, got: {stdout}"
+    );
+
     let _ = std::fs::remove_dir_all(&state);
+}
+
+fn build_test_wav(sample_rate: u32, num_frames: usize) -> Vec<u8> {
+    let data_len = (num_frames * 2) as u32;
+    let riff_len = 36 + data_len;
+    let mut buf = Vec::with_capacity((44 + data_len) as usize);
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&riff_len.to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes());
+    buf.extend_from_slice(&1u16.to_le_bytes());
+    buf.extend_from_slice(&1u16.to_le_bytes());
+    buf.extend_from_slice(&sample_rate.to_le_bytes());
+    buf.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+    buf.extend_from_slice(&2u16.to_le_bytes());
+    buf.extend_from_slice(&16u16.to_le_bytes());
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..num_frames {
+        let s = ((i as f32 * 0.2).sin() * 10_000.0) as i16;
+        buf.extend_from_slice(&s.to_le_bytes());
+    }
+    buf
 }

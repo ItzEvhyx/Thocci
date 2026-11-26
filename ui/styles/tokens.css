@@ -1,0 +1,151 @@
+:root,
+[data-theme-scope="light"] {
+  --font-display: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Segoe UI Symbol", sans-serif;
+
+  /* Light theme tokens (default) */
+  --bg-canvas: #E6EAF3;
+  --bg-window: #FDFDFF;
+  --border-rim: #D7DEEB;
+  --bg-sidebar: #F3F5FA;
+  --text-primary: #17181D;
+  --text-muted: #575B67;
+  --divider: #DDE2EC;
+  --bg-raised: #FFFFFF;
+  --bg-raised-hover: #F7F9FD;
+  --stage-top: #F1F4FC;
+  --stage-bottom: #DDE4F4;
+  --stage-orbit: #8196CD;
+  --stage-floor: #F1F4FC;
+
+  /* Keyboard tokens — Light mode (silver aluminum & white Magic Keyboard) */
+  --kb-chassis-top: #D6D9DF;
+  --kb-chassis-bottom: #C5C9D0;
+  --kb-chassis-rim: #ADB2BC;
+  --kb-chassis-bevel: rgba(255, 255, 255, 0.55);
+  --kb-key-well: #8A8F9A;
+  --kb-key-well-opacity: 0.55;
+  --kb-cap-top: #FCFCFD;
+  --kb-cap-bottom: #F1F2F5;
+  --kb-key-rim: #7D828E;
+  --kb-cap-highlight-top: rgba(255, 255, 255, 0.85);
+  --kb-cap-highlight-bottom: rgba(255, 255, 255, 0);
+  --kb-legend: #545863;
+
+  /* Light interactive accents */
+  --accent: #435EC6;
+  --accent-hover: #3852B6;
+  --kb-pressed: #4361CD;
+  --kb-pressed-rim: #3852B6;
+  --kb-pressed-legend: #FFFFFF;
+  --kb-pressed-glow: none;
+  --on-accent: #FFFFFF;
+  --toggle-knob-on: #FFFFFF;
+  --toggle-knob-off: #FFFFFF;
+  --slider-thumb-bg: #FFFFFF;
+  --slider-thumb-border: #435EC6;
+  --track: #D8DEEC;
+  --bg-soft: #E9EDFB;
+  --pack-badge-bg: #F3F5FA;
+  --pack-badge-active-bg: #FFFFFF;
+  --icon-color: #4D5260;
+  --focus-ring: rgba(67, 94, 198, 0.45);
+  --shadow-card: 0 1px 2px rgba(23, 24, 29, 0.04);
+  --shadow-modal: 0 24px 64px rgba(17, 20, 30, 0.22);
+  --shadow-toast: 0 10px 28px rgba(17, 20, 30, 0.14);
+  --danger-bg: #FEF2F2;
+  --danger-border: #FECACA;
+  --danger-text: #991B1B;
+  --warn-bg: #FFFBEB;
+  --warn-border: #FDE68A;
+  --warn-text: #92400E;
+  --success-bg: #ECFDF5;
+  --success-border: #A7F3D0;
+  --success-text: #065F46;
+
+  /* Sidebar slide transition (matched open/close ease-out) */
+  --sidebar-open-duration: 260ms;
+  --sidebar-open-easing: ease-out;
+  --sidebar-close-duration: 260ms;
+  --sidebar-close-easing: ease-out;
+
+  /* Radii */
+  --radius-window: 27px;
+  --radius-sidebar: 19px;
+  --radius-stage: 22px;
+  --radius-row: 12px;
+  --radius-pill: 999px;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"],
+[data-theme-scope="dark"] {
+  --bg-canvas: #080809;
+  --bg-window: #111112;
+  --border-rim: #343436;
+  --bg-sidebar: #181819;
+  --text-primary: #F5F5F5;
+  --text-muted: #B0B0B2;
+  --divider: #313133;
+  --bg-raised: #212122;
+  --bg-raised-hover: #28282A;
+  --stage-top: #161617;
+  --stage-bottom: #353537;
+  --stage-orbit: #89898B;
+  --stage-floor: #353537;
+
+  /* Space Black MacBook keyboard skin in dark mode (with top & bottom keycap rim highlights) */
+  --kb-chassis-top: #1A1A1D;
+  --kb-chassis-bottom: #121214;
+  --kb-chassis-rim: #2D2D32;
+  --kb-chassis-bevel: rgba(255, 255, 255, 0.08);
+  --kb-key-well: #060607;
+  --kb-key-well-opacity: 0.92;
+  --kb-cap-top: #252528;
+  --kb-cap-bottom: #1A1A1D;
+  --kb-key-rim: #0B0B0D;
+  --kb-cap-highlight-top: rgba(255, 255, 255, 0.24);
+  --kb-cap-highlight-bottom: rgba(255, 255, 255, 0.14);
+  --kb-legend: #E6E6EC;
+
+  /* Charcoal neutral gray accents in dark mode */
+  --accent: #D4D4D6;
+  --accent-hover: #E5E5E7;
+  --kb-pressed: #3A3B42;
+  --kb-pressed-rim: #D8DAE4;
+  --kb-pressed-legend: #FFFFFF;
+  --kb-pressed-glow: drop-shadow(0 0 5px rgba(255, 255, 255, 0.26));
+  --on-accent: #181819;
+  --toggle-knob-on: #181819;
+  --toggle-knob-off: #E5E5E7;
+  --slider-thumb-bg: #212122;
+  --slider-thumb-border: #D4D4D6;
+  --track: #404042;
+  --bg-soft: #2B2B2D;
+  --pack-badge-bg: #2A2A2C;
+  --pack-badge-active-bg: #363638;
+  --icon-color: #B0B0B2;
+  --focus-ring: rgba(212, 212, 214, 0.5);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-modal: 0 28px 72px rgba(0, 0, 0, 0.65);
+  --shadow-toast: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --danger-bg: #2B1618;
+  --danger-border: #5E262B;
+  --danger-text: #FCA5A5;
+  --warn-bg: #292112;
+  --warn-border: #5C461B;
+  --warn-text: #FCD34D;
+  --success-bg: #13281E;
+  --success-border: #1F543B;
+  --success-text: #6EE7B7;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sidebar-open-duration: 0ms;
+    --sidebar-close-duration: 0ms;
+  }
+}

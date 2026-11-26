@@ -1,0 +1,77 @@
+{
+  "stage": {
+    "width": 850,
+    "height": 304,
+    "cornerRadius": 22,
+    "clip": true
+  },
+  "mascot": {
+    "width": 174,
+    "height": 129
+  },
+  "initialPose": "Peek up",
+  "poses": [
+    {
+      "name": "Peek up",
+      "x": 338,
+      "y": 193,
+      "asset": "thocci-quick-actions.svg",
+      "effects": []
+    },
+    {
+      "name": "Peek from side",
+      "x": -68,
+      "y": 113,
+      "asset": "thocci-quick-actions.svg",
+      "effects": []
+    },
+    {
+      "name": "Slide",
+      "x": 543,
+      "y": 150,
+      "asset": "thocci-quick-actions.svg",
+      "effects": [
+        {
+          "asset": "slide-trail.svg",
+          "x": 453,
+          "y": 198,
+          "width": 90,
+          "height": 40,
+          "layer": "background"
+        }
+      ]
+    },
+    {
+      "name": "Jump",
+      "x": 338,
+      "y": 91,
+      "asset": "thocci-excited.svg",
+      "effects": [
+        {
+          "asset": "jump-shadow.svg",
+          "x": 362,
+          "y": 260,
+          "width": 126,
+          "height": 13,
+          "layer": "background"
+        }
+      ]
+    },
+    {
+      "name": "Sleep",
+      "x": 338,
+      "y": 208,
+      "asset": "thocci-sleeping.svg",
+      "effects": [
+        {
+          "asset": "sleep-marks.svg",
+          "x": 489,
+          "y": 189,
+          "width": 40,
+          "height": 40,
+          "layer": "foreground"
+        }
+      ]
+    }
+  ]
+}

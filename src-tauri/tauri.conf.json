@@ -4,30 +4,66 @@
   "version": "0.1.0",
   "identifier": "dev.itzevhyx.thocci",
   "build": {
+    "beforeDevCommand": "npm run build:ui",
+    "beforeBuildCommand": "npm run build:ui",
     "frontendDist": "../ui"
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": false,
     "windows": [
       {
         "label": "main",
         "title": "Thocci",
-        "width": 440,
-        "height": 460,
-        "resizable": true
+        "url": "index.html",
+        "width": 1160,
+        "height": 806,
+        "minWidth": 480,
+        "minHeight": 474,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "resizable": true,
+        "center": true,
+        "visible": false
+      },
+      {
+        "label": "quick-actions",
+        "title": "Thocci Quick Actions",
+        "url": "index.html?view=quick-actions",
+        "width": 288,
+        "height": 282,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Mechanical keyboard sounds for your desktop",
+    "longDescription": "Thocci gives your physical keyboard a custom mechanical sound with 20 built-in soundpacks, local WAV import, and an interactive desktop dashboard.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
   }
 }

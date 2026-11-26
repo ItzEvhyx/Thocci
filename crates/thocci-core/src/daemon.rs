@@ -83,7 +83,7 @@ impl SharedState {
             return "ERR missing pack id".to_owned();
         };
         let target_rate = Some(self.audio.sample_rate());
-        let new_pack = match Soundpack::load_builtin(pack_id, target_rate) {
+        let new_pack = match Soundpack::load_by_id(pack_id, target_rate) {
             Ok(pack) => pack,
             Err(err) => {
                 log::error!("Failed to load pack {pack_id}: {err}");
@@ -111,7 +111,10 @@ impl SharedState {
             let guard = self.pack.read().unwrap_or_else(|e| e.into_inner());
             Arc::clone(&guard)
         };
-        let Some(sound) = pack.sound_for_linux_key(event.code) else {
+        let Some(sound) = pack
+            .sound_for_linux_key(event.code)
+            .or_else(|| pack.representative_sound())
+        else {
             return;
         };
         match event.kind {
@@ -145,6 +148,7 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
 
     let target_rate = Some(audio.sample_rate());
     let (pack, pack_id) = load_initial_pack(&config, target_rate)?;
+    audio.reset_watchdog();
     log::info!(
         "Loaded soundpack '{}' ({}, {} keys) at volume {}%",
         pack.info().name,
@@ -195,7 +199,7 @@ fn load_initial_pack(
         return Ok((pack, id));
     }
     let pack_id = config.pack_id.clone().unwrap_or_else(read_saved_pack);
-    let pack = Soundpack::load_builtin(&pack_id, target_rate)?;
+    let pack = Soundpack::load_by_id(&pack_id, target_rate)?;
     Ok((pack, pack_id))
 }
 

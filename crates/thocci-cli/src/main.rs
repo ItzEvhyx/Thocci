@@ -176,18 +176,20 @@ fn print_err(message: &str, color: bool) {
 
 fn cmd_on(pack: Option<PathBuf>, volume: Option<i64>, color: bool) -> u8 {
     if let Some(pid) = client::running_pid() {
-        if color {
-            println!(
-                "{}● already running{} {}(pid {pid}){}",
-                term::GREEN_BOLD,
-                term::RESET,
-                term::DIM,
-                term::RESET
-            );
-        } else {
-            println!("already running (pid {pid})");
+        if client::is_responsive() {
+            if color {
+                println!(
+                    "{}● already running{} {}(pid {pid}){}",
+                    term::GREEN_BOLD,
+                    term::RESET,
+                    term::DIM,
+                    term::RESET
+                );
+            } else {
+                println!("already running (pid {pid})");
+            }
+            return 0;
         }
-        return 0;
     }
 
     let exe = match std::env::current_exe() {
@@ -320,14 +322,14 @@ fn cmd_volume(level: i64, color: bool) -> u8 {
 }
 
 fn cmd_switch_pack(query: &str, color: bool) -> u8 {
-    let pack = match soundpack::resolve_pack_query(query) {
+    let pack = match soundpack::resolve_any_pack_query(query) {
         Ok(pack) => pack,
         Err(err) => {
             print_err(&err.to_string(), color);
             return 1;
         }
     };
-    match client::set_pack(pack.id) {
+    match client::set_pack(&pack.id) {
         Ok(true) => {
             if color {
                 println!(
@@ -338,11 +340,11 @@ fn cmd_switch_pack(query: &str, color: bool) -> u8 {
                     pack.id,
                     term::RESET,
                     term::DIM,
-                    pack.display_name,
+                    pack.raw_name,
                     term::RESET
                 );
             } else {
-                println!("pack {} ({})", pack.id, pack.display_name);
+                println!("pack {} ({})", pack.id, pack.raw_name);
             }
             0
         }
@@ -356,13 +358,13 @@ fn cmd_switch_pack(query: &str, color: bool) -> u8 {
                     pack.id,
                     term::RESET,
                     term::DIM,
-                    pack.display_name,
+                    pack.raw_name,
                     term::RESET
                 );
             } else {
                 println!(
                     "pack {} ({}; saved, will use on next thocci on)",
-                    pack.id, pack.display_name
+                    pack.id, pack.raw_name
                 );
             }
             0

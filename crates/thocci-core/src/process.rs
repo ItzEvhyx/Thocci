@@ -45,12 +45,36 @@ pub fn spawn_detached(exe: &Path, args: &[String], log_path: &Path) -> Result<Ch
 fn platform_pid_is_running(pid: u32) -> bool {
     // SAFETY: `kill(pid, 0)` only checks process existence and sends no signal.
     let rc = unsafe { libc::kill(pid as libc::pid_t, 0) };
-    if rc == 0 {
-        return true;
+    if rc != 0 {
+        let errno = std::io::Error::last_os_error().raw_os_error();
+        // EPERM means the process exists even though we cannot signal it.
+        if errno != Some(libc::EPERM) {
+            return false;
+        }
     }
-    let errno = std::io::Error::last_os_error().raw_os_error();
-    // EPERM means the process exists even though we cannot signal it.
-    errno == Some(libc::EPERM)
+
+    // On Linux, `kill(pid, 0)` still succeeds for `<defunct>` zombie processes
+    // waiting to be reaped by a long-lived parent (like the desktop app). Treat
+    // zombie/dead processes as not running so UI/CLI never report a dead daemon
+    // as active.
+    #[cfg(target_os = "linux")]
+    if is_linux_zombie(pid) {
+        return false;
+    }
+
+    true
+}
+
+#[cfg(target_os = "linux")]
+fn is_linux_zombie(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    // Field 3 immediately follows the closing ')' of the comm field.
+    let Some(after_comm) = stat.rsplit_once(')').map(|(_, rest)| rest.trim_start()) else {
+        return false;
+    };
+    matches!(after_comm.as_bytes().first(), Some(b'Z' | b'X' | b'x'))
 }
 
 #[cfg(unix)]

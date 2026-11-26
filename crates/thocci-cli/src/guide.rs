@@ -198,9 +198,11 @@ pub fn print_status<W: Write>(w: &mut W, st: &DaemonStatus, color: bool) -> io::
 
 /// Format `thocci packs` with active indicator, aligned slugs, and usage hint.
 pub fn print_packs<W: Write>(w: &mut W, active: &str, color: bool) -> io::Result<()> {
+    let imported = soundpack::list_imported_packs();
     let width = soundpack::BUILTIN_PACKS
         .iter()
         .map(|p| p.id.len())
+        .chain(imported.iter().map(|p| p.id.len()))
         .max()
         .unwrap_or(14)
         + 2;
@@ -256,6 +258,52 @@ pub fn print_packs<W: Write>(w: &mut W, active: &str, color: bool) -> io::Result
                 "{marker} {:<width$} {}{default_tag}",
                 pack.id, pack.display_name
             )?;
+        }
+    }
+
+    if !imported.is_empty() {
+        if color {
+            writeln!(
+                w,
+                "\n  {}IMPORTED{} {}({}){}\n",
+                term::MAGENTA_BOLD,
+                term::RESET,
+                term::DIM,
+                imported.len(),
+                term::RESET,
+            )?;
+        }
+        for pack in &imported {
+            let is_active = pack.id == active;
+            if color {
+                let marker = if is_active {
+                    format!("{}●{}", term::GREEN_BOLD, term::RESET)
+                } else {
+                    format!("{}·{}", term::DIM, term::RESET)
+                };
+                let id_color = if is_active {
+                    term::GREEN_BOLD
+                } else {
+                    term::CMD_COLOR
+                };
+                let pad = width.saturating_sub(pack.id.len());
+                writeln!(
+                    w,
+                    "  {marker} {id_color}{}{}{spaces}{}{}",
+                    pack.id,
+                    term::RESET,
+                    pack.display_name,
+                    term::RESET,
+                    spaces = " ".repeat(pad),
+                )?;
+            } else {
+                let marker = if is_active { "*" } else { " " };
+                writeln!(
+                    w,
+                    "{marker} {:<width$} {} (imported)",
+                    pack.id, pack.display_name
+                )?;
+            }
         }
     }
 

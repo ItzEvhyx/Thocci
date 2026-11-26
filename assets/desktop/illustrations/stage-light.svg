@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="850" height="304" viewBox="0 0 850 304">
+  <title>Thocci stage — light</title>
+  <defs>
+    <linearGradient id="Fill-Stage-lighting-126" x1="0%" x2="0%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#F1F4FC" />
+      <stop offset="100%" stop-color="#DDE4F4" />
+    </linearGradient>
+    <clipPath id="Clip-Thocci-stage-125">
+      <rect width="850" height="304" rx="22" />
+    </clipPath>
+  </defs>
+  <g id="Thocci-stage-125">
+    <rect x="0" y="0" width="850" height="304" rx="22" fill="none" />
+    <g clip-path="url(#Clip-Thocci-stage-125)">
+      <rect id="Stage-lighting-126" x="0" y="0" width="850" height="304" rx="22" fill="url(#Fill-Stage-lighting-126)" stroke="#D7DEEB" stroke-width="1" />
+      <g id="Sound-ripples-127">
+        <svg fill="none" x="0" y="0" width="850" height="304" viewBox="0 0 850 304">
+          <ellipse cx="425" cy="300" rx="213" ry="79" stroke="#8196CD" stroke-opacity=".3" />
+          <ellipse cx="425" cy="301" rx="293" ry="113" stroke="#8196CD" stroke-opacity=".22" />
+          <ellipse cx="425" cy="303" rx="369" ry="148" stroke="#8196CD" stroke-opacity=".13" />
+          <path d="M298 234c-6 5-9 12-9 19m263-19c6 5 9 12 9 19" stroke="#8196CD" stroke-opacity=".58" stroke-width="1.5" stroke-linecap="round" />
+          <circle cx="220" cy="231" r="2" fill="#8196CD" fill-opacity=".55" />
+          <circle cx="636" cy="225" r="2.5" fill="#8196CD" fill-opacity=".5" />
+        </svg>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -4,3 +4,4 @@
 *.log
 .DS_Store
 src-tauri/gen/schemas/
+ui/vendor/

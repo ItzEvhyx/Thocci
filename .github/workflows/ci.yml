@@ -30,6 +30,17 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Node dependencies and prepare UI assets
+        run: |
+          npm install
+          npm run build:ui
+          npm run test:ui
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

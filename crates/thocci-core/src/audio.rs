@@ -7,8 +7,9 @@
 //! - Automatically reopens the output stream if the default output device
 //!   changes or disconnects.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -19,27 +20,39 @@ use cpal::{
 use crate::soundpack::{resample_stereo, SoundClip};
 use crate::{Error, Result};
 
-const TARGET_BUFFER_FRAMES: u32 = 128;
+/// Target callback period on macOS/Windows; on Linux we use `BufferSize::Default`
+/// so PipeWire-ALSA negotiates a clean period/ring configuration without forcing
+/// hardware-incompatible sub-2ms quantums (which trigger `EPIPE` loops on Intel SOF).
+#[cfg(not(target_os = "linux"))]
+const TARGET_BUFFER_FRAMES: u32 = 256;
 const MAX_VOICES: usize = 8;
+/// Discard unstarted voices that waited longer than this (e.g. during an xrun
+/// or device suspend) so delayed keystrokes never fire phantom clicks later.
+const MAX_VOICE_STALENESS: Duration = Duration::from_millis(150);
+/// Reopen the output stream if the audio callback stops advancing for this long.
+const CALLBACK_STALL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Poll timeout passed to `cpal` so ALSA's xrun/suspend recovery path can fire
+/// even if `POLLERR`/`POLLHUP` is missed by the driver or PipeWire bridge.
+const STREAM_POLL_TIMEOUT: Duration = Duration::from_millis(200);
 
-/// Hint PipeWire / PulseAudio toward a low-latency quantum (Linux only).
+/// Hint PipeWire / PulseAudio toward a stable low-latency quantum (Linux only).
 ///
 /// Must be called early during daemon startup before opening audio streams.
 pub fn apply_low_latency_env() {
     #[cfg(target_os = "linux")]
     {
         if std::env::var_os("PIPEWIRE_LATENCY").is_none() {
-            std::env::set_var("PIPEWIRE_LATENCY", "64/48000");
+            std::env::set_var("PIPEWIRE_LATENCY", "512/48000");
         }
         if std::env::var_os("PULSE_LATENCY_MSEC").is_none() {
-            std::env::set_var("PULSE_LATENCY_MSEC", "8");
+            std::env::set_var("PULSE_LATENCY_MSEC", "15");
         }
         if std::env::var_os("PULSE_PROP_media.role").is_none() {
             std::env::set_var("PULSE_PROP_media.role", "event");
         }
         let existing = std::env::var("PIPEWIRE_PROPS").unwrap_or_default();
-        if !existing.contains("node.latency=") {
-            let props = format!("{existing} media.role=Event node.latency=64/48000");
+        if !existing.contains("media.role=") {
+            let props = format!("{existing} media.role=Event");
             std::env::set_var("PIPEWIRE_PROPS", props.trim());
         }
     }
@@ -50,6 +63,8 @@ struct Voice {
     samples: Arc<[f32]>,
     /// Current index into `samples` (always even, advances by 2 per frame).
     cursor: usize,
+    /// When the keystroke queued this voice; stale unstarted voices are dropped.
+    queued_at: Instant,
 }
 
 struct MixerShared {
@@ -57,6 +72,10 @@ struct MixerShared {
     /// Volume as `f32::to_bits()`, clamped to `[0.0, 1.0]`.
     volume_bits: AtomicU32,
     needs_reopen: AtomicBool,
+    /// Monotonically incremented by every `render()` invocation to detect stalls.
+    callback_ticks: AtomicU64,
+    /// Consecutive xruns observed before forcing a clean stream reopen.
+    xrun_streak: AtomicU32,
 }
 
 impl MixerShared {
@@ -65,6 +84,8 @@ impl MixerShared {
             voices: Mutex::new(Vec::with_capacity(MAX_VOICES)),
             volume_bits: AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()),
             needs_reopen: AtomicBool::new(false),
+            callback_ticks: AtomicU64::new(0),
+            xrun_streak: AtomicU32::new(0),
         }
     }
 
@@ -78,11 +99,19 @@ impl MixerShared {
     }
 
     fn push_voice(&self, samples: Arc<[f32]>) {
+        self.push_voice_at(samples, Instant::now());
+    }
+
+    fn push_voice_at(&self, samples: Arc<[f32]>, queued_at: Instant) {
         if samples.len() < 2 {
             return;
         }
         let mut voices = self.voices.lock().unwrap_or_else(|e| e.into_inner());
-        voices.push(Voice { samples, cursor: 0 });
+        voices.push(Voice {
+            samples,
+            cursor: 0,
+            queued_at,
+        });
         if voices.len() > MAX_VOICES {
             let excess = voices.len() - MAX_VOICES;
             voices.drain(0..excess);
@@ -99,6 +128,9 @@ impl MixerShared {
     where
         T: SizedSample + FromSample<f32>,
     {
+        self.callback_ticks.fetch_add(1, Ordering::Relaxed);
+        self.xrun_streak.store(0, Ordering::Relaxed);
+
         let zero = T::from_sample(0.0);
         let volume = self.volume();
 
@@ -107,6 +139,14 @@ impl MixerShared {
             output.fill(zero);
             return;
         };
+
+        // Drop any unstarted voices that waited past the staleness budget so a
+        // stalled/reopened audio callback never emits phantom clicks later.
+        let now = Instant::now();
+        voices.retain(|voice| {
+            voice.cursor > 0
+                || now.saturating_duration_since(voice.queued_at) <= MAX_VOICE_STALENESS
+        });
 
         if voices.is_empty() || volume <= 0.0 {
             if !voices.is_empty() && volume <= 0.0 {
@@ -180,6 +220,8 @@ struct ActiveStream {
     // Kept alive for the lifetime of playback.
     _stream: Stream,
     device_id: Option<DeviceId>,
+    last_observed_ticks: u64,
+    last_tick_advance: Instant,
 }
 
 // SAFETY: `ActiveStream` is only ever constructed, dropped, or replaced while
@@ -221,11 +263,18 @@ impl AudioEngine {
         self.shared.set_volume(volume);
     }
 
-    /// Queue a decoded clip for immediate playback.
-    pub fn play_clip(&self, clip: &SoundClip) {
-        if self.shared.needs_reopen.swap(false, Ordering::AcqRel) {
-            self.reopen_if_needed();
+    /// Reset the callback stall timer (e.g. after initial soundpack decoding completes).
+    pub fn reset_watchdog(&self) {
+        let ticks = self.shared.callback_ticks.load(Ordering::Relaxed);
+        let mut guard = self.stream.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(active) = guard.as_mut() {
+            active.last_observed_ticks = ticks;
+            active.last_tick_advance = Instant::now();
         }
+    }
+
+    /// Queue a decoded clip for immediate playback without blocking the input thread.
+    pub fn play_clip(&self, clip: &SoundClip) {
         let target_rate = self.sample_rate();
         let samples = if clip.sample_rate == target_rate {
             Arc::clone(&clip.samples)
@@ -239,13 +288,15 @@ impl AudioEngine {
         self.shared.push_voice(samples);
     }
 
-    /// Check whether the system default audio device changed and reopen if so.
+    /// Check whether the audio callback has stopped advancing or the default
+    /// output device changed, reopening the stream if needed.
     pub fn check_device_change(&self) {
-        if self.shared.needs_reopen.swap(false, Ordering::AcqRel) {
+        if self.shared.needs_reopen.swap(false, Ordering::AcqRel) || self.is_stream_stalled() {
+            log::info!("Audio stream stalled or flagged for recovery; reopening");
             self.reopen_if_needed();
             return;
         }
-        let Some(current_id) = default_device_id() else {
+        let Some(current_id) = preferred_device_id() else {
             return;
         };
         let changed = {
@@ -261,6 +312,21 @@ impl AudioEngine {
         }
     }
 
+    fn is_stream_stalled(&self) -> bool {
+        let now = Instant::now();
+        let ticks = self.shared.callback_ticks.load(Ordering::Relaxed);
+        let mut guard = self.stream.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(active) = guard.as_mut() else {
+            return false;
+        };
+        if ticks != active.last_observed_ticks {
+            active.last_observed_ticks = ticks;
+            active.last_tick_advance = now;
+            return false;
+        }
+        now.saturating_duration_since(active.last_tick_advance) >= CALLBACK_STALL_TIMEOUT
+    }
+
     fn reopen_if_needed(&self) {
         let mut guard = self.stream.lock().unwrap_or_else(|e| e.into_inner());
         self.shared.clear();
@@ -268,6 +334,8 @@ impl AudioEngine {
         match open_output_stream(Arc::clone(&self.shared)) {
             Ok((active, rate)) => {
                 self.sample_rate.store(rate, Ordering::Relaxed);
+                self.shared.needs_reopen.store(false, Ordering::Release);
+                self.shared.xrun_streak.store(0, Ordering::Relaxed);
                 *guard = Some(active);
             }
             Err(err) => {
@@ -284,9 +352,10 @@ impl AudioEngine {
     }
 }
 
-fn default_device_id() -> Option<DeviceId> {
+fn preferred_device_id() -> Option<DeviceId> {
     let host = cpal::default_host();
-    host.default_output_device()
+    pick_output_device(&host)
+        .ok()
         .and_then(|device| device.id().ok())
 }
 
@@ -306,6 +375,7 @@ fn open_output_stream(shared: Arc<MixerShared>) -> Result<(ActiveStream, u32)> {
     let preferred_config = choose_stream_config(&supported);
     let fallback_config = supported.config();
 
+    let initial_ticks = shared.callback_ticks.load(Ordering::Relaxed);
     let (stream, used_config) =
         match build_stream(&device, preferred_config, format, Arc::clone(&shared)) {
             Ok(stream) => (stream, preferred_config),
@@ -334,6 +404,8 @@ fn open_output_stream(shared: Arc<MixerShared>) -> Result<(ActiveStream, u32)> {
         ActiveStream {
             _stream: stream,
             device_id,
+            last_observed_ticks: initial_ticks,
+            last_tick_advance: Instant::now(),
         },
         used_config.sample_rate,
     ))
@@ -363,12 +435,23 @@ fn pick_output_device(host: &cpal::Host) -> Result<Device> {
 
 fn choose_stream_config(supported: &SupportedStreamConfig) -> StreamConfig {
     let mut config = supported.config();
-    config.buffer_size = match supported.buffer_size() {
-        SupportedBufferSize::Range { min, max } => {
-            BufferSize::Fixed(TARGET_BUFFER_FRAMES.clamp(*min, *max))
-        }
-        SupportedBufferSize::Unknown => BufferSize::Default,
-    };
+    #[cfg(target_os = "linux")]
+    {
+        // Let PipeWire-ALSA / ALSA use its own period sizing (guided by
+        // `PIPEWIRE_LATENCY`) instead of forcing Fixed frames that can trigger
+        // continuous hardware xruns on Intel SOF codecs.
+        let _ = SupportedBufferSize::Unknown;
+        config.buffer_size = BufferSize::Default;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        config.buffer_size = match supported.buffer_size() {
+            SupportedBufferSize::Range { min, max } => {
+                BufferSize::Fixed(TARGET_BUFFER_FRAMES.clamp(*min, *max))
+            }
+            SupportedBufferSize::Unknown => BufferSize::Default,
+        };
+    }
     config
 }
 
@@ -418,14 +501,19 @@ where
                     err_shared.needs_reopen.store(true, Ordering::Release);
                 }
                 ErrorKind::Xrun => {
-                    log::debug!("Audio buffer underrun: {err}");
+                    let streak = err_shared.xrun_streak.fetch_add(1, Ordering::Relaxed) + 1;
+                    log::debug!("Audio buffer underrun (streak={streak}): {err}");
+                    if streak >= 8 {
+                        log::warn!("Repeated audio underruns ({streak}); flagging stream reopen");
+                        err_shared.needs_reopen.store(true, Ordering::Release);
+                    }
                 }
                 _ => {
                     log::warn!("Audio stream error: {err}");
                     err_shared.needs_reopen.store(true, Ordering::Release);
                 }
             },
-            None,
+            Some(STREAM_POLL_TIMEOUT),
         )
         .map_err(|err| Error::new(format!("Could not build audio output stream: {err}")))
 }
@@ -433,6 +521,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixer_drops_stale_unstarted_voices_to_prevent_phantom_clicks() {
+        let mixer = MixerShared::new(1.0);
+        let stale_time = Instant::now() - Duration::from_millis(500);
+        mixer.push_voice_at(Arc::from(vec![0.9f32, 0.9, 0.9, 0.9]), stale_time);
+
+        let mut buf = [0.0f32; 4];
+        mixer.render(&mut buf, 2);
+        assert_eq!(buf, [0.0, 0.0, 0.0, 0.0]);
+        assert!(mixer.voices.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn mixer_combines_overlapping_voices_and_clamps() {

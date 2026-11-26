@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick-actions-popover",
+  "description": "Minimal scoped capability for the Quick Actions tray popover window",
+  "windows": ["quick-actions"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:allow-hide"
+  ]
+}

@@ -75,6 +75,14 @@ pub fn log_file() -> PathBuf {
     state_dir().join("thocci.log")
 }
 
+pub fn soundpacks_dir() -> PathBuf {
+    state_dir().join("soundpacks")
+}
+
+pub fn ui_prefs_file() -> PathBuf {
+    state_dir().join("ui-prefs.json")
+}
+
 pub fn ensure_state_dir() -> io::Result<()> {
     fs::create_dir_all(state_dir())
 }
@@ -106,15 +114,15 @@ pub fn clamp_percent(value: i64) -> u8 {
     value.clamp(0, 100) as u8
 }
 
-/// Saved built-in pack id; unknown or missing values fall back to the default.
+/// Saved pack id (built-in or user-imported); unknown or missing values fall back to the default.
 pub fn read_saved_pack() -> String {
     read_trimmed(pack_file())
-        .filter(|id| soundpack::is_builtin(id))
+        .filter(|id| soundpack::is_known_pack(id))
         .unwrap_or_else(|| DEFAULT_PACK_ID.to_owned())
 }
 
 pub fn write_saved_pack(pack_id: &str) -> io::Result<()> {
-    if !soundpack::is_builtin(pack_id) {
+    if !soundpack::is_known_pack(pack_id) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("Unknown soundpack: {pack_id}"),

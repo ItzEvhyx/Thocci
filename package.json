@@ -2,9 +2,12 @@
   "name": "thocci",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Thocci desktop shell (Tauri + Rust)",
   "scripts": {
     "tauri": "tauri",
+    "build:ui": "node scripts/prepare-ui.mjs",
+    "test:ui": "node --test ui/tests/*.test.mjs",
     "dev": "tauri dev",
     "build": "tauri build"
   },

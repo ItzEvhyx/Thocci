@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="432" height="242" viewBox="0 0 432 242">
+  <title>Thocci on the spacebar</title>
+  <defs>
+    <linearGradient id="Fill-Illustration-surface-3" x1="0%" x2="0%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#F3F5FA" />
+      <stop offset="100%" stop-color="#E1E5F1" />
+    </linearGradient>
+    <linearGradient id="Fill-Spacebar-chassis-9" x1="0%" x2="0%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#363840" />
+      <stop offset="100%" stop-color="#191A20" />
+    </linearGradient>
+    <linearGradient id="Fill-Spacebar-face-10" x1="0%" x2="0%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#4A4D58" />
+      <stop offset="100%" stop-color="#2D3039" />
+    </linearGradient>
+    <clipPath id="Clip-Thocci-on-the-spacebar-2">
+      <rect width="432" height="242" rx="22" />
+    </clipPath>
+  </defs>
+  <g id="Thocci-on-the-spacebar-2">
+    <rect x="0" y="0" width="432" height="242" rx="22" fill="none" />
+    <g clip-path="url(#Clip-Thocci-on-the-spacebar-2)">
+      <rect id="Illustration-surface-3" x="0" y="0" width="432" height="242" rx="22" fill="url(#Fill-Illustration-surface-3)" stroke="#E0E4EF" stroke-width="1" />
+      <g id="Keystroke-echoes-4">
+        <svg x="73" y="56" width="286" height="86" viewBox="0 0 286 86">
+          <path d="M60 12c-13 11-21 26-21 43M44 6C24 21 13 44 13 67M226 12c13 11 21 26 21 43M242 6c20 15 31 38 31 61" fill="none" stroke="#ADB9D6" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+      </g>
+      <rect id="Left-key-5" x="46" y="151" width="52" height="35" rx="9" fill="#F8F9FC" stroke="#CFD3DF" stroke-width="1" />
+      <rect id="Right-key-6" x="334" y="151" width="52" height="35" rx="9" fill="#F8F9FC" stroke="#CFD3DF" stroke-width="1" />
+      <path id="Command-legend-7" d="M69.9 166.6v5.5a1.3 1.3 0 1 1-1.3-1.3h6.8a1.3 1.3 0 1 1-1.3 1.3v-5.5a1.3 1.3 0 1 1 1.3 1.3h-6.8a1.3 1.3 0 1 1 1.3-1.3Z" fill="none" stroke="#4D5260" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+      <path id="K-legend-8" d="M357 164.4v8.3m5.8-8.3-5.8 5.9m2.5-2.6 3.7 5" fill="none" stroke="#4D5260" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+      <rect id="Spacebar-chassis-9" x="110" y="142" width="212" height="58" rx="17" fill="url(#Fill-Spacebar-chassis-9)" />
+      <rect id="Spacebar-face-10" x="116" y="137" width="200" height="49" rx="13" fill="url(#Fill-Spacebar-face-10)" stroke="#686C7A" stroke-width="1" />
+      <g id="Thocci-mascot-11">
+        <svg x="136" y="40" width="160" height="119" viewBox="0 0 160 119">
+          <path fill="#17181B" d="M14 106C5 100 0 90 0 79c0-12 5-24 13-35l13-27c3-7 11-8 15-2l9 12c12-6 26-10 43-10l19-14c6-5 13-3 16 3l24 43c5 10 8 20 8 31 0 13-6 24-17 29-17 7-39 10-63 10-26 0-51-3-66-13Z" />
+          <rect x="76" y="49" width="11" height="20" rx="5.5" fill="#FDFDFF" />
+          <rect x="97" y="48" width="11" height="20" rx="5.5" fill="#FDFDFF" />
+        </svg>
+      </g>
+      <rect id="Spacebar-legend-12" x="201" y="171" width="30" height="2" rx="1" fill="#DCDFEA" />
+    </g>
+  </g>
+</svg>

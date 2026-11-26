@@ -1,5 +1,12 @@
 //! Linux keyboard capture via `/dev/input/event*` (`evdev`).
+//!
+//! Filters strictly to physical keyboard keycodes (`1..=248`, excluding mouse,
+//! touchpad, and gamepad `BTN_*` events `>= 256`), tracks held keys to suppress
+//! duplicate presses and stray releases (including synthetic `SYN_DROPPED`
+//! recovery artifacts), and periodically rescans `/dev/input` so hotplugged or
+//! reconnected keyboards resume seamlessly.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
@@ -7,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use evdev::{Device, EventType, KeyCode};
 
@@ -15,6 +23,9 @@ use crate::keymap::{self, KEY_A};
 use crate::{Error, Result};
 
 const POLL_TIMEOUT_MS: i32 = 250;
+const RESCAN_INTERVAL: Duration = Duration::from_secs(2);
+/// Highest standard Linux keyboard `KEY_*` code before `BTN_MISC` (0x100 = 256).
+const MAX_KEYBOARD_KEYCODE: u16 = 248;
 
 pub struct LinuxEvdevListener {
     stop: Arc<AtomicBool>,
@@ -32,7 +43,7 @@ impl LinuxEvdevListener {
 
 impl KeyListener for LinuxEvdevListener {
     fn start(&mut self, on_key: KeyCallback) -> Result<()> {
-        let devices = discover_keyboards()?;
+        let devices = discover_keyboards(&HashSet::new())?;
         self.stop.store(false, Ordering::Release);
         let stop = Arc::clone(&self.stop);
 
@@ -61,9 +72,10 @@ impl Drop for LinuxEvdevListener {
 struct OpenedKeyboard {
     path: PathBuf,
     device: Device,
+    pressed: HashSet<u16>,
 }
 
-fn discover_keyboards() -> Result<Vec<OpenedKeyboard>> {
+fn discover_keyboards(already_open: &HashSet<PathBuf>) -> Result<Vec<OpenedKeyboard>> {
     let mut devices = Vec::new();
     let mut denied = 0usize;
 
@@ -75,7 +87,10 @@ fn discover_keyboards() -> Result<Vec<OpenedKeyboard>> {
     entries.sort();
 
     for path in entries {
-        let device = match Device::open(&path) {
+        if already_open.contains(&path) {
+            continue;
+        }
+        let mut device = match Device::open(&path) {
             Ok(dev) => dev,
             Err(err) if err.kind() == ErrorKind::PermissionDenied => {
                 denied += 1;
@@ -101,12 +116,23 @@ fn discover_keyboards() -> Result<Vec<OpenedKeyboard>> {
             continue;
         }
 
+        // Flush any stale events sitting in the kernel buffer before listening.
+        while let Ok(iter) = device.fetch_events() {
+            if iter.count() == 0 {
+                break;
+            }
+        }
+
         let name = device.name().unwrap_or("unknown");
         log::info!("Listening on {} ({name})", path.display());
-        devices.push(OpenedKeyboard { path, device });
+        devices.push(OpenedKeyboard {
+            path,
+            device,
+            pressed: HashSet::new(),
+        });
     }
 
-    if devices.is_empty() {
+    if devices.is_empty() && already_open.is_empty() {
         if denied > 0 {
             return Err(Error::new(format!(
                 "Permission denied on {denied} input device(s). Add your user to the 'input' group (`sudo usermod -aG input $USER`), then log out and back in."
@@ -128,10 +154,20 @@ fn is_event_node(path: &Path) -> bool {
 }
 
 fn poll_loop(mut devices: Vec<OpenedKeyboard>, on_key: KeyCallback, stop: Arc<AtomicBool>) {
+    let mut last_rescan = Instant::now();
+
     while !stop.load(Ordering::Acquire) {
+        if last_rescan.elapsed() >= RESCAN_INTERVAL {
+            let open_paths: HashSet<PathBuf> = devices.iter().map(|d| d.path.clone()).collect();
+            if let Ok(newly_found) = discover_keyboards(&open_paths) {
+                devices.extend(newly_found);
+            }
+            last_rescan = Instant::now();
+        }
+
         if devices.is_empty() {
-            log::error!("All keyboard devices disconnected");
-            break;
+            thread::sleep(Duration::from_millis(POLL_TIMEOUT_MS as u64));
+            continue;
         }
 
         let mut fds: Vec<libc::pollfd> = devices
@@ -152,7 +188,8 @@ fn poll_loop(mut devices: Vec<OpenedKeyboard>, on_key: KeyCallback, stop: Arc<At
                 continue;
             }
             log::error!("evdev poll failed: {err}");
-            break;
+            thread::sleep(Duration::from_millis(100));
+            continue;
         }
         if ready == 0 {
             continue;
@@ -183,21 +220,50 @@ fn drain_device(kb: &mut OpenedKeyboard, on_key: &KeyCallback) -> bool {
     loop {
         match kb.device.fetch_events() {
             Ok(events) => {
-                for ev in events {
+                // Collect raw batch first so we can drop synthetic SYN_DROPPED resync
+                // bursts without emitting phantom key clicks.
+                let batch: Vec<_> = events.collect();
+                let had_syn_dropped = batch.iter().any(|ev| {
+                    ev.event_type() == EventType::SYNCHRONIZATION && ev.code() == 3
+                    /* SYN_DROPPED */
+                });
+                if had_syn_dropped {
+                    log::debug!(
+                        "Dropped evdev SYN_DROPPED resync batch on {}",
+                        kb.path.display()
+                    );
+                    kb.pressed.clear();
+                    continue;
+                }
+
+                for ev in batch {
                     if ev.event_type() != EventType::KEY {
                         continue;
                     }
-                    // value: 1 = initial press, 0 = release, 2 = auto-repeat (ignored).
-                    let kind = match ev.value() {
-                        1 => KeyEventKind::Down,
-                        0 => KeyEventKind::Up,
-                        _ => continue,
-                    };
                     let code = ev.code();
-                    if keymap::is_ignored(code) {
+                    if code == 0 || code > MAX_KEYBOARD_KEYCODE || keymap::is_ignored(code) {
                         continue;
                     }
-                    on_key(KeyEvent { code, kind });
+                    // value: 1 = initial press, 0 = release, 2 = auto-repeat (ignored).
+                    match ev.value() {
+                        1 => {
+                            if kb.pressed.insert(code) {
+                                on_key(KeyEvent {
+                                    code,
+                                    kind: KeyEventKind::Down,
+                                });
+                            }
+                        }
+                        0 => {
+                            if kb.pressed.remove(&code) {
+                                on_key(KeyEvent {
+                                    code,
+                                    kind: KeyEventKind::Up,
+                                });
+                            }
+                        }
+                        _ => continue,
+                    }
                 }
             }
             Err(err) if err.kind() == ErrorKind::WouldBlock => return true,
