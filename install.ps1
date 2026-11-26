@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Repo = "ItzEvhyx/Thocci"
-$FallbackVersion = "v0.1.0"
+$FallbackVersion = "v1.0.0"
 $InstallDir = "$env:USERPROFILE\.local\bin"
 $ExePath = "$InstallDir\thocci.exe"
 $DesktopExePath = "$InstallDir\thocci-app.exe"

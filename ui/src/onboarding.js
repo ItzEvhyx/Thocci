@@ -5,12 +5,32 @@
 import { api, currentTauriWindow, listenEvent } from "./bridge.js";
 import { iconMarkup } from "./icons.js";
 
-export function mountOnboarding(root, { onComplete }) {
+export async function mountOnboarding(root, { onComplete }) {
   document.body.className = "mode-onboarding";
   document.documentElement.setAttribute("data-theme", "light");
 
+  // Fetch Wayland layer-shell rect before mounting so the card never flashes fullscreen.
+  const initialPlacement = await api.getOverlayPlacement().catch(() => null);
+  let layerPanelMode = false;
+  let layerRect = { x: 720, y: 303, width: 480, height: 474, screenWidth: 1920, screenHeight: 1080 };
+  if (initialPlacement && initialPlacement.layerShell) {
+    layerPanelMode = true;
+    document.body.dataset.layerPanel = "true";
+    layerRect = {
+      x: Math.round(initialPlacement.x),
+      y: Math.round(initialPlacement.y),
+      width: Math.round(initialPlacement.width),
+      height: Math.round(initialPlacement.height),
+      screenWidth: Math.round(initialPlacement.screenWidth || window.innerWidth || 1920),
+      screenHeight: Math.round(initialPlacement.screenHeight || window.innerHeight || 1080),
+    };
+  }
+  const initialStyle = layerPanelMode
+    ? ` style="left:${layerRect.x}px;top:${layerRect.y}px;width:${layerRect.width}px;height:${layerRect.height}px"`
+    : "";
+
   root.innerHTML = `
-    <main class="onboarding-shell" data-tauri-drag-region aria-label="Welcome to Thocci">
+    <main class="onboarding-shell is-entering"${initialStyle} data-tauri-drag-region aria-label="Welcome to Thocci">
       <button id="onboardingCloseBtn" type="button" class="onboarding-close-btn" aria-label="Close Thocci">×</button>
       <div class="onboarding-illustration-frame" data-tauri-drag-region>
         <img src="./vendor/illustrations/onboarding.svg" alt="Thocci perched on a black spacebar between Command and K keycaps" draggable="false" />
@@ -30,8 +50,7 @@ export function mountOnboarding(root, { onComplete }) {
   const closeBtn = root.querySelector("#onboardingCloseBtn");
   const shell = root.querySelector(".onboarding-shell");
   let busy = false;
-  let layerPanelMode = false;
-  let layerRect = { x: 720, y: 303, width: 480, height: 474, screenWidth: 1920, screenHeight: 1080 };
+  setTimeout(() => shell?.classList.remove("is-entering"), 420);
 
   function applyLayerPanelRect() {
     if (!layerPanelMode) return;
@@ -60,7 +79,6 @@ export function mountOnboarding(root, { onComplete }) {
   void listenEvent("thocci://overlay-placement", applyPlacement).then((fn) => {
     unlistenOverlay = fn;
   });
-  void api.getOverlayPlacement().then(applyPlacement).catch(() => {});
 
   shell.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0 || ev.target.closest("button")) return;

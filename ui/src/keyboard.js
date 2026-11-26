@@ -433,6 +433,7 @@ export async function mountInteractiveKeyboard(
 
   const keyNodes = new Map();
   const tracker = new KeyHoldTracker();
+  let enabled = true;
 
   function syncKeyVisual(code) {
     const node = keyNodes.get(code);
@@ -573,6 +574,7 @@ export async function mountInteractiveKeyboard(
 
     // Pointer / touch audition handlers
     g.addEventListener("pointerdown", (ev) => {
+      if (!enabled) return;
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
       if (
         document.activeElement instanceof HTMLElement &&
@@ -631,6 +633,7 @@ export async function mountInteractiveKeyboard(
   }
 
   function handleKeyDown(ev) {
+    if (!enabled) return;
     if (ev.repeat) return;
     const code = ev.code;
     if (!code || !keyNodes.has(code)) return;
@@ -680,6 +683,14 @@ export async function mountInteractiveKeyboard(
   return {
     keyCount: layout.keys.length,
     clearHeld: clearAllVisuals,
+    setEnabled(nextEnabled) {
+      const next = Boolean(nextEnabled);
+      if (next === enabled) return;
+      enabled = next;
+      if (!enabled) {
+        clearAllVisuals();
+      }
+    },
     destroy() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);

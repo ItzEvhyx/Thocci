@@ -45,40 +45,11 @@ Toggle playback from the tray or menu bar, open Settings, or jump straight to So
 
 ## Installation
 
-[GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases) is where prebuilt downloads will appear. To run Thocci before a release is available for your platform, build it from source.
-
-### Run from source
-
-Install Git, [stable Rust](https://rustup.rs/), and [Node.js 22](https://nodejs.org/). Then set up your platform's native dependencies.
-
-| Platform | Prerequisites |
-| --- | --- |
-| Windows | Visual Studio Build Tools with **Desktop development with C++**, the MSVC Rust toolchain, and Microsoft Edge WebView2. |
-| macOS | Xcode Command Line Tools. Run `xcode-select --install` if needed. |
-| Linux | WebKitGTK 4.1, GTK 3, ALSA, and the other desktop build dependencies below. |
-
-See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform setup and package names on other Linux distributions. On Ubuntu or Debian, install the dependencies used by Thocci's build.
-
-```bash
-sudo apt update
-sudo apt install build-essential curl libasound2-dev libwebkit2gtk-4.1-dev \
-  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
-```
-
-On any of the three platforms, clone the repository and launch the desktop app.
-
-```sh
-git clone https://github.com/ItzEvhyx/Thocci.git
-cd Thocci
-npm ci
-npm run dev
-```
-
-Use `npm run build` to create local desktop bundles under `target/release/bundle/`. For a CLI-only build, run `cargo install --path crates/thocci-cli --locked` from the repository root.
+Prebuilt desktop and CLI binaries are published on [GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases) — no Rust, Node.js, or build tools are required.
 
 ### Install from a release
 
-Use the steps below once [Releases](https://github.com/ItzEvhyx/Thocci/releases) contains a build for your platform. The scripts install both the desktop app and CLI. For CLI-only installs, pass `-CliOnly` on Windows or `--cli-only` on macOS and Linux.
+The installers below download both the desktop app and the `thocci` CLI from the latest release and register Thocci in your OS app launcher. For CLI-only installs, pass `-CliOnly` on Windows or `--cli-only` on macOS and Linux.
 
 #### Windows · x64
 
@@ -108,6 +79,35 @@ curl -fsSLo thocci-install.sh https://raw.githubusercontent.com/ItzEvhyx/Thocci/
 ```
 
 Open **Thocci** from your application launcher. The installer puts both binaries in `~/.local/bin` and adds a desktop entry. Add that directory to your shell's `PATH` if you plan to use the CLI. System-wide sound uses the [input group setup](#permissions) on X11 and Wayland.
+
+### Run from source
+
+Install Git, [stable Rust](https://rustup.rs/), and [Node.js 22](https://nodejs.org/). Then set up your platform's native dependencies.
+
+| Platform | Prerequisites |
+| --- | --- |
+| Windows | Visual Studio Build Tools with **Desktop development with C++**, the MSVC Rust toolchain, and Microsoft Edge WebView2. |
+| macOS | Xcode Command Line Tools. Run `xcode-select --install` if needed. |
+| Linux | WebKitGTK 4.1, GTK 3, ALSA, and the other desktop build dependencies below. |
+
+See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform setup and package names on other Linux distributions. On Ubuntu or Debian, install the dependencies used by Thocci's build.
+
+```bash
+sudo apt update
+sudo apt install build-essential curl libasound2-dev libwebkit2gtk-4.1-dev \
+  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
+On any of the three platforms, clone the repository and launch the desktop app.
+
+```sh
+git clone https://github.com/ItzEvhyx/Thocci.git
+cd Thocci
+npm ci
+npm run dev
+```
+
+Use `npm run build` to create local desktop bundles under `target/release/bundle/`. For a CLI-only build, run `cargo install --path crates/thocci-cli --locked` from the repository root.
 
 ## Permissions
 

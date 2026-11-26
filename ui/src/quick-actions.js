@@ -25,6 +25,23 @@ const SWITCH_LETTERS = [
   { letter: "S", code: "KeyS" },
 ];
 
+/**
+ * Compute expressive, anatomically bounded Quick Actions eye & head gaze
+ * transforms from cursor delta `(dx, dy)` relative to Ink's eye center.
+ * Eyes rest at x=76..108, y=48..69 inside the 160x119 blob (deck covers y>=76).
+ */
+export function computeQuickActionsGaze(dx, dy) {
+  const nx = Math.tanh(dx / 80);
+  const ny = Math.tanh(dy / 72);
+  const eyeX = nx < 0 ? nx * 32 : nx * 22;
+  const eyeY = ny < 0 ? ny * 17 : ny * 9.5;
+  const bodyX = nx * 5.2;
+  const bodyY = ny * 2.6;
+  const bodyTilt = nx * 3.5;
+  const eyeSquashX = 1 - Math.abs(nx) * 0.14;
+  return { eyeX, eyeY, bodyX, bodyY, bodyTilt, eyeSquashX };
+}
+
 export async function mountQuickActions(root) {
   document.title = "Thocci Quick Actions";
   document.body.className = "mode-quick-actions";
@@ -83,6 +100,7 @@ export async function mountQuickActions(root) {
   const gearBtn = root.querySelector("#qaGearBtn");
   const switchesRow = root.querySelector("#qaSwitchesRow");
   const switchCaps = Array.from(root.querySelectorAll(".qa-switch-cap"));
+  const bodyGroup = root.querySelector("#thocci-body");
   const eyesGroup = root.querySelector("#thocci-eyes");
 
   const focusable = [toggleBtn, gearBtn, switchesRow];
@@ -156,6 +174,8 @@ export async function mountQuickActions(root) {
   function renderStatus(st, errorMsg = "") {
     engineStatus = st;
     const isOn = Boolean(st.running);
+    shell.dataset.thocciEnabled = isOn ? "true" : "false";
+    switchesRow.disabled = !isOn;
     toggleBtn.setAttribute("aria-pressed", isOn ? "true" : "false");
     toggleBtn.setAttribute(
       "aria-label",
@@ -189,7 +209,7 @@ export async function mountQuickActions(root) {
     }
   }
 
-  // Toggle keyboard keycap: plays one audition sample even when turning off / while off.
+  // Toggle keyboard keycap: plays an audition sample only when turning Thocci on.
   toggleBtn.addEventListener("click", async () => {
     if (toggling) return;
     toggling = true;
@@ -197,11 +217,12 @@ export async function mountQuickActions(root) {
     toggleBtn.setAttribute("data-pressed", "true");
     statusSub.hidden = true;
 
-    void api.playPreview(null, "down").catch(() => {});
-
     try {
       const next = await api.toggleDaemon();
       renderStatus(next);
+      if (next.running) {
+        void api.playPreview(null, "down").catch(() => {});
+      }
     } catch (err) {
       const fresh = await api.getStatus().catch(() => engineStatus);
       const shortErr = formatShortError(err);
@@ -216,7 +237,9 @@ export async function mountQuickActions(root) {
   // Gear keycap -> open/focus dashboard & dismiss popover.
   gearBtn.addEventListener("click", async () => {
     gearBtn.setAttribute("data-pressed", "true");
-    void api.playPreview(null, "down").catch(() => {});
+    if (engineStatus.running) {
+      void api.playPreview(null, "down").catch(() => {});
+    }
     setTimeout(async () => {
       gearBtn.setAttribute("data-pressed", "false");
       try {
@@ -239,6 +262,7 @@ export async function mountQuickActions(root) {
   }
 
   switchesRow.addEventListener("pointerdown", (ev) => {
+    if (!engineStatus.running) return;
     const cap = ev.target.closest?.(".qa-switch-cap");
     clearSwitchCapPress();
     if (cap) {
@@ -256,6 +280,7 @@ export async function mountQuickActions(root) {
   switchesRow.addEventListener("pointerleave", clearSwitchCapPress);
 
   switchesRow.addEventListener("click", (ev) => {
+    if (!engineStatus.running) return;
     const cap = ev.target.closest?.(".qa-switch-cap");
     const code = cap?.dataset?.code || lastCapCode || "KeyS";
     const highlightCap = cap || switchCaps[0];
@@ -294,20 +319,51 @@ export async function mountQuickActions(root) {
   }
   window.addEventListener("keydown", handleKeyDown);
 
-  // Bounded smooth pointer-follow eye tracking for #thocci-eyes
+  // Expressive pointer-follow eye & subtle head tracking for Ink in Quick Actions
   let trackingActive = !document.hidden;
-  let targetX = 0;
-  let targetY = 0;
-  let currentX = 0;
-  let currentY = 0;
+  let targetEyeX = 0;
+  let targetEyeY = 0;
+  let targetBodyX = 0;
+  let targetBodyY = 0;
+  let targetBodyTilt = 0;
+  let targetEyeSquashX = 1;
+
+  let curEyeX = 0;
+  let curEyeY = 0;
+  let curBodyX = 0;
+  let curBodyY = 0;
+  let curBodyTilt = 0;
+  let curEyeSquashX = 1;
   let rafId = null;
 
-  function applyEyesTransform(dx, dy) {
-    if (!eyesGroup) return;
-    if (Math.abs(dx) < 0.02 && Math.abs(dy) < 0.02) {
-      eyesGroup.removeAttribute("transform");
-    } else {
-      eyesGroup.setAttribute("transform", `translate(${dx.toFixed(2)}, ${dy.toFixed(2)})`);
+  function applyGazeTransforms() {
+    if (eyesGroup) {
+      if (
+        Math.abs(curEyeX) < 0.02 &&
+        Math.abs(curEyeY) < 0.02 &&
+        Math.abs(curEyeSquashX - 1) < 0.002
+      ) {
+        eyesGroup.removeAttribute("transform");
+      } else {
+        eyesGroup.setAttribute(
+          "transform",
+          `translate(${curEyeX.toFixed(2)}, ${curEyeY.toFixed(2)}) translate(92, 58) scale(${curEyeSquashX.toFixed(3)}, 1) translate(-92, -58)`,
+        );
+      }
+    }
+    if (bodyGroup) {
+      if (
+        Math.abs(curBodyX) < 0.02 &&
+        Math.abs(curBodyY) < 0.02 &&
+        Math.abs(curBodyTilt) < 0.02
+      ) {
+        bodyGroup.removeAttribute("transform");
+      } else {
+        bodyGroup.setAttribute(
+          "transform",
+          `translate(${curBodyX.toFixed(2)}, ${curBodyY.toFixed(2)}) rotate(${curBodyTilt.toFixed(2)}, 80, 119)`,
+        );
+      }
     }
   }
 
@@ -316,16 +372,32 @@ export async function mountQuickActions(root) {
       rafId = null;
       return;
     }
-    currentX += (targetX - currentX) * 0.18;
-    currentY += (targetY - currentY) * 0.18;
-    applyEyesTransform(currentX, currentY);
+    const alpha = 0.28;
+    curEyeX += (targetEyeX - curEyeX) * alpha;
+    curEyeY += (targetEyeY - curEyeY) * alpha;
+    curBodyX += (targetBodyX - curBodyX) * alpha;
+    curBodyY += (targetBodyY - curBodyY) * alpha;
+    curBodyTilt += (targetBodyTilt - curBodyTilt) * alpha;
+    curEyeSquashX += (targetEyeSquashX - curEyeSquashX) * alpha;
+    applyGazeTransforms();
 
-    if (Math.abs(targetX - currentX) > 0.04 || Math.abs(targetY - currentY) > 0.04) {
+    const settled =
+      Math.abs(targetEyeX - curEyeX) < 0.04 &&
+      Math.abs(targetEyeY - curEyeY) < 0.04 &&
+      Math.abs(targetBodyX - curBodyX) < 0.03 &&
+      Math.abs(targetBodyY - curBodyY) < 0.03 &&
+      Math.abs(targetBodyTilt - curBodyTilt) < 0.03;
+
+    if (!settled) {
       rafId = requestAnimationFrame(tickEyes);
     } else {
-      currentX = targetX;
-      currentY = targetY;
-      applyEyesTransform(currentX, currentY);
+      curEyeX = targetEyeX;
+      curEyeY = targetEyeY;
+      curBodyX = targetBodyX;
+      curBodyY = targetBodyY;
+      curBodyTilt = targetBodyTilt;
+      curEyeSquashX = targetEyeSquashX;
+      applyGazeTransforms();
       rafId = null;
     }
   }
@@ -338,16 +410,24 @@ export async function mountQuickActions(root) {
   }
 
   function resetEyes(immediate = false) {
-    targetX = 0;
-    targetY = 0;
+    targetEyeX = 0;
+    targetEyeY = 0;
+    targetBodyX = 0;
+    targetBodyY = 0;
+    targetBodyTilt = 0;
+    targetEyeSquashX = 1;
     if (immediate || reducedMotionQuery.matches) {
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      currentX = 0;
-      currentY = 0;
-      applyEyesTransform(0, 0);
+      curEyeX = 0;
+      curEyeY = 0;
+      curBodyX = 0;
+      curBodyY = 0;
+      curBodyTilt = 0;
+      curEyeSquashX = 1;
+      applyGazeTransforms();
     } else {
       kickEyesLoop();
     }
@@ -359,11 +439,13 @@ export async function mountQuickActions(root) {
     // Mascot eye center sits around (156, 136) in popover 288x282 coordinates
     const eyeCenterX = rect.left + 156;
     const eyeCenterY = rect.top + 136;
-    const normX = Math.max(-1, Math.min(1, (ev.clientX - eyeCenterX) / 130));
-    const normY = Math.max(-1, Math.min(1, (ev.clientY - eyeCenterY) / 115));
-    // Clamp strictly inside the mascot face
-    targetX = normX * 7.5;
-    targetY = normY * 4.8;
+    const gaze = computeQuickActionsGaze(ev.clientX - eyeCenterX, ev.clientY - eyeCenterY);
+    targetEyeX = gaze.eyeX;
+    targetEyeY = gaze.eyeY;
+    targetBodyX = gaze.bodyX;
+    targetBodyY = gaze.bodyY;
+    targetBodyTilt = gaze.bodyTilt;
+    targetEyeSquashX = gaze.eyeSquashX;
     kickEyesLoop();
   }
 
@@ -371,8 +453,10 @@ export async function mountQuickActions(root) {
     resetEyes(false);
   }
 
-  viewport.addEventListener("pointermove", handlePointerMove);
-  viewport.addEventListener("pointerleave", handlePointerLeave);
+  window.addEventListener("pointermove", handlePointerMove, { passive: true });
+  window.addEventListener("mousemove", handlePointerMove, { passive: true });
+  document.addEventListener("pointerleave", handlePointerLeave);
+  document.addEventListener("mouseleave", handlePointerLeave);
   reducedMotionQuery.addEventListener("change", () => resetEyes(true));
 
   const unlistenPlacement = await listenEvent("thocci://quick-actions-placement", (placement) => {
@@ -389,7 +473,6 @@ export async function mountQuickActions(root) {
     resetEyes(true);
     void api.getQuickActionsPlacement().then((p) => applyPlacement(p)).catch(() => {});
     void reconcileStatus();
-    toggleBtn.focus();
   });
 
   const unlistenHidden = await listenEvent("thocci://quick-actions-hidden", () => {
@@ -415,15 +498,16 @@ export async function mountQuickActions(root) {
   const initialPlacement = await api.getQuickActionsPlacement().catch(() => null);
   applyPlacement(initialPlacement);
   await reconcileStatus();
-  toggleBtn.focus();
 
   return {
     destroy() {
       trackingActive = false;
       resetEyes(true);
       window.removeEventListener("keydown", handleKeyDown);
-      viewport.removeEventListener("pointermove", handlePointerMove);
-      viewport.removeEventListener("pointerleave", handlePointerLeave);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("mousemove", handlePointerMove);
+      document.removeEventListener("pointerleave", handlePointerLeave);
+      document.removeEventListener("mouseleave", handlePointerLeave);
       unlistenPlacement();
       unlistenState();
       unlistenShown();

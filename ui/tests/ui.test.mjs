@@ -10,6 +10,7 @@ import {
   isPointerBlurControl,
   isTextEditableElement,
 } from "../src/dashboard.js";
+import { computeQuickActionsGaze } from "../src/quick-actions.js";
 import {
   STAGE_CORNERS,
   STAGE_GAMES,
@@ -324,4 +325,25 @@ test("pointer focus predicates release buttons/switches/sliders while preserving
   assert.equal(isTextEditableElement(mkEl("TEXTAREA")), true);
   assert.equal(isTextEditableElement(mkEl("INPUT", { type: "range" })), false);
   assert.equal(isTextEditableElement(mkEl("BUTTON")), false);
+});
+
+test("Quick Actions gaze tracks cursor expressively while staying inside Ink silhouette", () => {
+  const center = computeQuickActionsGaze(0, 0);
+  assert.equal(center.eyeX, 0);
+  assert.equal(center.eyeY, 0);
+  assert.equal(center.eyeSquashX, 1);
+
+  const farLeft = computeQuickActionsGaze(-400, 0);
+  assert.ok(farLeft.eyeX < -28 && farLeft.eyeX >= -32, `left gaze=${farLeft.eyeX}`);
+  assert.ok(farLeft.bodyX < -4 && farLeft.bodyTilt < -3);
+  assert.ok(farLeft.eyeSquashX < 0.9);
+
+  const farRight = computeQuickActionsGaze(400, 0);
+  assert.ok(farRight.eyeX > 19 && farRight.eyeX <= 22, `right gaze=${farRight.eyeX}`);
+
+  const farUp = computeQuickActionsGaze(0, -400);
+  assert.ok(farUp.eyeY < -15 && farUp.eyeY >= -17, `up gaze=${farUp.eyeY}`);
+
+  const farDown = computeQuickActionsGaze(0, 400);
+  assert.ok(farDown.eyeY > 8 && farDown.eyeY <= 9.5, `down gaze=${farDown.eyeY}`);
 });

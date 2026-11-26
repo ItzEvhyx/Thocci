@@ -30,7 +30,7 @@ async function boot() {
     view === "onboarding" ||
     (!prefs.onboarding_completed && view !== "dashboard" && view !== "soundpacks")
   ) {
-    mountOnboarding(root, {
+    await mountOnboarding(root, {
       async onComplete(updatedPrefs) {
         await mountDashboard(root, { initialPrefs: updatedPrefs });
       },

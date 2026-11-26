@@ -75,6 +75,37 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   let isImporting = false;
   let volumeDragging = false;
 
+  // Fetch Wayland layer-shell placement & initial engine state BEFORE painting
+  // `.dashboard-shell` so it never flashes fullscreen (1920x1080) or wrong enabled state.
+  const [initialPlacement, initialStatus, initialCatalog, initialPlatform] = await Promise.all([
+    api.getOverlayPlacement().catch(() => null),
+    api.getStatus().catch(() => status),
+    api.listPackCatalog().catch(() => []),
+    api.getPlatformInfo().catch(() => null),
+  ]);
+  if (initialStatus) status = initialStatus;
+  if (Array.isArray(initialCatalog)) catalog = initialCatalog;
+  platformInfo = initialPlatform;
+
+  let layerPanelMode = false;
+  let layerRect = { x: 380, y: 137, width: 1160, height: 806, screenWidth: 1920, screenHeight: 1080 };
+  if (initialPlacement && initialPlacement.layerShell) {
+    layerPanelMode = true;
+    document.body.dataset.layerPanel = "true";
+    layerRect = {
+      x: Math.round(initialPlacement.x),
+      y: Math.round(initialPlacement.y),
+      width: Math.round(initialPlacement.width),
+      height: Math.round(initialPlacement.height),
+      screenWidth: Math.round(initialPlacement.screenWidth || window.innerWidth || 1920),
+      screenHeight: Math.round(initialPlacement.screenHeight || window.innerHeight || 1080),
+    };
+  }
+  const initialShellStyle = layerPanelMode
+    ? ` style="left:${layerRect.x}px;top:${layerRect.y}px;width:${layerRect.width}px;height:${layerRect.height}px"`
+    : "";
+  const initialEnabledAttr = status.running ? "true" : "false";
+
   function resolvedTheme() {
     if (prefs.theme === "light" || prefs.theme === "dark") {
       return prefs.theme;
@@ -101,7 +132,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
 
   root.innerHTML = `
-    <div class="dashboard-shell">
+    <div class="dashboard-shell" data-thocci-enabled="${initialEnabledAttr}"${initialShellStyle}>
       <div class="resize-handle resize-handle--n" data-resize="North" aria-hidden="true"></div>
       <div class="resize-handle resize-handle--s" data-resize="South" aria-hidden="true"></div>
       <div class="resize-handle resize-handle--w" data-resize="West" aria-hidden="true"></div>
@@ -128,7 +159,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           <section class="sidebar-group" aria-labelledby="grpPlayback">
             <h2 id="grpPlayback" class="sidebar-group-label">Playback</h2>
 
-            <div class="sidebar-row">
+            <div id="enableRow" class="sidebar-row sidebar-row--enable-master">
               <div class="sidebar-row-left">
                 ${iconMarkup("power")}
                 <span class="sidebar-row-title">Enable Thocci</span>
@@ -138,7 +169,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
                 type="button"
                 class="switch-btn"
                 role="switch"
-                aria-checked="false"
+                aria-checked="${initialEnabledAttr}"
                 aria-label="Enable Thocci"
               >
                 <span class="switch-knob" aria-hidden="true"></span>
@@ -207,7 +238,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           <section class="sidebar-group" aria-labelledby="grpApp">
             <h2 id="grpApp" class="sidebar-group-label">App</h2>
 
-            <div class="sidebar-row">
+            <div id="animateRow" class="sidebar-row">
               <div class="sidebar-row-left">
                 ${iconMarkup("animate")}
                 <span class="sidebar-row-title">Animate Thocci</span>
@@ -399,10 +430,19 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     }
   });
 
-  // EvhOS Settings-style launch entrance animation (OutExpo base + staggered sidebar/content)
+  // EvhOS Settings-style launch entrance & exit animations (OutExpo pop-in + staggered groups)
   let entranceTimer = null;
+  let closeAnimTimer = null;
+  let isClosingWindow = false;
+
   function playEntranceAnimation() {
     if (!dashboardShell) return;
+    isClosingWindow = false;
+    if (closeAnimTimer) {
+      clearTimeout(closeAnimTimer);
+      closeAnimTimer = null;
+    }
+    dashboardShell.classList.remove("is-closing");
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reducedMotion) return;
     if (entranceTimer) {
@@ -417,7 +457,31 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       entranceTimer = null;
     }, 520);
   }
-  playEntranceAnimation();
+
+  function closeDashboardAnimated() {
+    if (isClosingWindow) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const doClose = () => {
+      isClosingWindow = false;
+      void currentTauriWindow()?.close?.().catch(() => {});
+    };
+    if (reducedMotion || !dashboardShell) {
+      doClose();
+      return;
+    }
+    isClosingWindow = true;
+    if (entranceTimer) {
+      clearTimeout(entranceTimer);
+      entranceTimer = null;
+    }
+    dashboardShell.classList.remove("is-entering");
+    void dashboardShell.offsetWidth;
+    dashboardShell.classList.add("is-closing");
+    closeAnimTimer = setTimeout(() => {
+      closeAnimTimer = null;
+      doClose();
+    }, 175);
+  }
 
   // Frameless floating window drag & 8-direction edge/corner resize.
   // On Linux Wayland layer-shell compositors (Hyprland, Sway, etc.) the layer
@@ -425,8 +489,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   // screen-space at native 60/120fps and tighten the Wayland input mask on
   // pointerup — matching Quickshell's `Main.qml` zero-jitter drag behavior.
   // On macOS, Windows, and X11/GNOME we use standard native floating OS windows.
-  let layerPanelMode = false;
-  let layerRect = { x: 380, y: 137, width: 1160, height: 806, screenWidth: 1920, screenHeight: 1080 };
 
   function applyLayerPanelRect() {
     if (!layerPanelMode || !dashboardShell) return;
@@ -587,9 +649,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     });
   }
 
-  windowCloseBtn?.addEventListener("click", () => {
-    void currentTauriWindow()?.close?.().catch(() => {});
-  });
+  windowCloseBtn?.addEventListener("click", closeDashboardAnimated);
 
   // ── Flying Typed-Character Stream (keycap -> center-top of Thocci's stage -> drop & fade after 0.5s) ──
   const activeTypedTokens = [];
@@ -732,13 +792,14 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   let stageSwapTimer = null;
   let challengeSuspended = false;
   let dashboardHidden = false;
+  let disabledSuspended = !status.running;
 
   function syncStageSuspension() {
-    stage?.setSuspended?.(challengeSuspended || dashboardHidden);
+    stage?.setSuspended?.(challengeSuspended || dashboardHidden || disabledSuspended);
   }
 
   function openTypingChallenge() {
-    if (typingGame || stageSwapping) return;
+    if (!status.running || typingGame || stageSwapping) return;
     stageSwapping = true;
     clearTypedStream();
     challengeSuspended = true;
@@ -838,11 +899,13 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   const keyboard = await mountInteractiveKeyboard(keyboardCard, {
     onVisualActivity() {
+      if (!status.running) return;
       if (!typingGame && !stageSwapping && setupGuideModal.hidden) {
         stage.reactToKeystroke();
       }
     },
     onPointerAudition(code, kind) {
+      if (!status.running) return;
       void api.playPreview(code, kind).catch((err) => {
         if (kind === "down") {
           setBanner("error", `Audio preview failed: ${String(err)}`);
@@ -850,6 +913,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       });
     },
     onKeyTyped(info) {
+      if (!status.running) return;
       if (typingGame) {
         if (setupGuideModal.hidden) {
           typingGame.handleInput(info);
@@ -966,7 +1030,33 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
 
   function renderStatus() {
-    enableToggle.setAttribute("aria-checked", status.running ? "true" : "false");
+    const enabled = Boolean(status.running);
+    enableToggle.setAttribute("aria-checked", enabled ? "true" : "false");
+    if (dashboardShell) {
+      dashboardShell.dataset.thocciEnabled = enabled ? "true" : "false";
+    }
+    disabledSuspended = !enabled;
+    syncStageSuspension();
+    keyboard.setEnabled(enabled);
+
+    volumeSlider.disabled = !enabled;
+    browseSoundpacksBtn.disabled = !enabled;
+    importWavBtn.disabled = !enabled || isImporting;
+    animateToggle.disabled = !enabled;
+    themeToggleBtn.disabled = !enabled;
+    if (challengeTriggerBtn) challengeTriggerBtn.disabled = !enabled;
+    spSearchInput.disabled = !enabled;
+
+    if (!enabled) {
+      clearTypedStream();
+      if (typingGame) {
+        closeTypingChallenge();
+      }
+      if (sidebarView === "soundpacks") {
+        setSidebarView("settings", { animate: true, manageFocus: false });
+      }
+    }
+
     if (!volumeDragging) {
       updateVolumeUi(status.volume);
     }
@@ -1207,6 +1297,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
 
   volumeSlider.addEventListener("pointerdown", (ev) => {
+    if (!status.running) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     ev.preventDefault();
     volumeDragging = true;
@@ -1288,6 +1379,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   // Browse soundpacks & Back navigation
   browseSoundpacksBtn.addEventListener("click", (ev) => {
+    if (!status.running) return;
     setSidebarView("soundpacks", { animate: true, manageFocus: ev.detail === 0 });
   });
 
@@ -1318,7 +1410,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   // Import WAV
   importWavBtn.addEventListener("click", async () => {
-    if (isImporting) return;
+    if (!status.running || isImporting) return;
     isImporting = true;
     importWavBtn.disabled = true;
     importWavLabel.textContent = "Importing…";
@@ -1349,6 +1441,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   // Animate Thocci toggle (persisted separately in ui-prefs.json)
   animateToggle.addEventListener("click", async () => {
+    if (!status.running) return;
     const nextVal = !prefs.animate_mascot;
     prefs = { ...prefs, animate_mascot: nextVal };
     animateToggle.setAttribute("aria-checked", nextVal ? "true" : "false");
@@ -1487,6 +1580,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
 
   themeToggleBtn.addEventListener("click", () => {
+    if (!status.running) return;
     const nextTheme = resolvedTheme() === "dark" ? "light" : "dark";
     transitionTheme(nextTheme, async () => {
       try {
@@ -1507,9 +1601,16 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   // ── Setup Guide Modal ─────────────────────────────────────────────────────
   let setupGuideOpenedByKeyboard = false;
+  let modalAnimTimer = null;
+  let isClosingModal = false;
 
-  function openSetupGuide({ focusClose = false } = {}) {
+  function openSetupGuide({ focusClose = false, animate = true } = {}) {
     setupGuideOpenedByKeyboard = Boolean(focusClose);
+    isClosingModal = false;
+    if (modalAnimTimer) {
+      clearTimeout(modalAnimTimer);
+      modalAnimTimer = null;
+    }
     const info = platformInfo || {
       os: "desktop",
       arch: "",
@@ -1528,6 +1629,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           ? "Permission needed"
           : "Check System Settings";
 
+    setupGuideModal.classList.remove("is-closing", "is-entering");
     setupGuideModal.hidden = false;
     setupGuideModal.innerHTML = `
       <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="setupGuideHeading">
@@ -1644,11 +1746,21 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     refreshBtn.addEventListener("click", async () => {
       platformInfo = await api.getPlatformInfo().catch(() => platformInfo);
       await reconcileAll();
-      openSetupGuide({ focusClose: false });
+      openSetupGuide({ focusClose: false, animate: false });
     });
     quitBtn.addEventListener("click", () => {
       void api.quitApp().catch(() => {});
     });
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (animate && !reducedMotion) {
+      void setupGuideModal.offsetWidth;
+      setupGuideModal.classList.add("is-entering");
+      modalAnimTimer = setTimeout(() => {
+        setupGuideModal.classList.remove("is-entering");
+        modalAnimTimer = null;
+      }, 460);
+    }
 
     if (focusClose) {
       closeBtn.focus({ preventScroll: true });
@@ -1658,13 +1770,38 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
 
   function closeSetupGuide({ restoreFocus = false } = {}) {
-    setupGuideModal.hidden = true;
-    setupGuideModal.innerHTML = "";
-    if (restoreFocus) {
-      setupGuideBtn.focus({ preventScroll: true });
-    } else {
-      blurActiveElement(null);
+    if (setupGuideModal.hidden || isClosingModal) return;
+    if (modalAnimTimer) {
+      clearTimeout(modalAnimTimer);
+      modalAnimTimer = null;
     }
+
+    const finalizeClose = () => {
+      isClosingModal = false;
+      setupGuideModal.classList.remove("is-entering", "is-closing");
+      setupGuideModal.hidden = true;
+      setupGuideModal.innerHTML = "";
+      if (restoreFocus) {
+        setupGuideBtn.focus({ preventScroll: true });
+      } else {
+        blurActiveElement(null);
+      }
+    };
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      finalizeClose();
+      return;
+    }
+
+    isClosingModal = true;
+    setupGuideModal.classList.remove("is-entering");
+    void setupGuideModal.offsetWidth;
+    setupGuideModal.classList.add("is-closing");
+    modalAnimTimer = setTimeout(() => {
+      modalAnimTimer = null;
+      finalizeClose();
+    }, 175);
   }
 
   setupGuideBtn.addEventListener("click", (ev) => {
@@ -1754,21 +1891,18 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     void reconcileAll();
   });
 
-  // Initial load
-  const [loadedPlatform, initialPlacement] = await Promise.all([
-    api.getPlatformInfo().catch(() => null),
-    api.getOverlayPlacement().catch(() => null),
-    reconcileAll(),
-  ]);
-  platformInfo = loadedPlatform;
-  applyOverlayPlacement(initialPlacement);
+  // Apply already-loaded initial status/platform & trigger clean pop-in entrance
+  renderStatus();
   if (platformInfo && !platformInfo.tray_available) {
     sidebarFooter.hidden = false;
   }
+  playEntranceAnimation();
 
   return {
     destroy() {
       if (entranceTimer) clearTimeout(entranceTimer);
+      if (closeAnimTimer) clearTimeout(closeAnimTimer);
+      if (modalAnimTimer) clearTimeout(modalAnimTimer);
       if (stageSwapTimer) clearTimeout(stageSwapTimer);
       typingGame?.destroy();
       clearTypedStream();

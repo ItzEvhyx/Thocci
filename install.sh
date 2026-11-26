@@ -6,7 +6,7 @@
 set -euo pipefail
 
 REPO="ItzEvhyx/Thocci"
-FALLBACK_VERSION="v0.1.0"
+FALLBACK_VERSION="v1.0.0"
 INSTALL_DIR="${HOME}/.local/bin"
 BIN_NAME="thocci"
 DESKTOP_BIN_NAME="thocci-app"
