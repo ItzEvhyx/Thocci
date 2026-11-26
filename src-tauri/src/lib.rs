@@ -711,8 +711,7 @@ pub fn run() {
                     width: init_w as i32,
                     height: init_h as i32,
                 };
-                let main_ok = app
-                    .get_webview_window("main")
+                app.get_webview_window("main")
                     .map(|w| {
                         layer_shell::setup_window(
                             handle,
@@ -722,35 +721,14 @@ pub fn run() {
                             main_rect,
                         )
                     })
-                    .unwrap_or(false);
-                if main_ok {
-                    if let Some(qa_win) = app.get_webview_window("quick-actions") {
-                        let _ = layer_shell::setup_window(
-                            handle,
-                            &qa_win,
-                            "thocci-quick-actions",
-                            layer_shell::LayerKind::BarPopup,
-                            layer_shell::PanelRect {
-                                x: 0,
-                                y: 0,
-                                width: mon_w,
-                                height: mon_h,
-                            },
-                        );
-                    }
-                }
-                main_ok
+                    .unwrap_or(false)
             };
             #[cfg(not(target_os = "linux"))]
             let layer_enabled = false;
 
             if !layer_enabled {
                 // On macOS, Windows, and non-layer-shell Linux sessions (X11 / GNOME),
-                // keep Quick Actions strictly fixed at 288x282 and give the native
-                // floating desktop window a clean OS shadow on macOS/Windows.
-                if let Some(qa_win) = app.get_webview_window("quick-actions") {
-                    let _ = qa_win.set_resizable(false);
-                }
+                // give the native floating desktop window a clean OS shadow on macOS/Windows.
                 #[cfg(not(target_os = "linux"))]
                 if let Some(main_win) = app.get_webview_window("main") {
                     let _ = main_win.set_shadow(true);
@@ -808,6 +786,7 @@ pub fn run() {
                     let has_tray = state.tray_available.load(Ordering::Acquire);
                     if !quitting && has_tray {
                         api.prevent_close();
+                        let _ = app.emit_to("main", "thocci://dashboard-hidden", ());
                         #[cfg(target_os = "linux")]
                         if layer_shell::is_active() {
                             let _ = app.run_on_main_thread(|| {

@@ -99,13 +99,22 @@ install_linux_desktop_entry() {
 [Desktop Entry]
 Type=Application
 Name=Thocci
+GenericName=Mechanical Keyboard Sounds
 Comment=Mechanical keyboard sounds for your desktop
 Exec=${exec_path}
 Icon=${icon_value}
 Terminal=false
 Categories=Utility;Audio;
+Keywords=keyboard;mechanical;sound;typing;thocci;
 StartupWMClass=thocci-app
 EOF
+
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "${apps_dir}" >/dev/null 2>&1 || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -f -t "${icons_base}" >/dev/null 2>&1 || true
+    fi
 }
 
 echo "Installing Thocci..."
@@ -121,15 +130,18 @@ fetch_latest_json() {
     fi
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+fi
 
 # 1. Install CLI binary (always preserved)
-if [ -f "${SCRIPT_DIR}/target/release/${BIN_NAME}" ]; then
+if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/target/release/${BIN_NAME}" ]; then
     echo "Installing CLI from local release build (${SCRIPT_DIR}/target/release/${BIN_NAME})..."
     rm -f "${TARGET_PATH}"
     cp "${SCRIPT_DIR}/target/release/${BIN_NAME}" "${TARGET_PATH}"
     chmod +x "${TARGET_PATH}"
-elif [ -f "${SCRIPT_DIR}/${BIN_NAME}" ]; then
+elif [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/${BIN_NAME}" ]; then
     echo "Installing CLI from local binary (${SCRIPT_DIR}/${BIN_NAME})..."
     rm -f "${TARGET_PATH}"
     cp "${SCRIPT_DIR}/${BIN_NAME}" "${TARGET_PATH}"
@@ -167,12 +179,12 @@ if [ "${CLI_ONLY}" != "1" ]; then
             mkdir -p "${HOME}/Applications"
         fi
 
-        if [ -d "${SCRIPT_DIR}/target/release/bundle/macos/Thocci.app" ]; then
+        if [ -n "${SCRIPT_DIR}" ] && [ -d "${SCRIPT_DIR}/target/release/bundle/macos/Thocci.app" ]; then
             echo "Installing macOS app from local bundle..."
             rm -rf "${MAC_APP_DEST}"
             cp -R "${SCRIPT_DIR}/target/release/bundle/macos/Thocci.app" "${MAC_APP_DEST}"
             DESKTOP_LAUNCH_TARGET="${MAC_APP_DEST}"
-        elif [ -d "${SCRIPT_DIR}/Thocci.app" ]; then
+        elif [ -n "${SCRIPT_DIR}" ] && [ -d "${SCRIPT_DIR}/Thocci.app" ]; then
             echo "Installing macOS app from local Thocci.app..."
             rm -rf "${MAC_APP_DEST}"
             cp -R "${SCRIPT_DIR}/Thocci.app" "${MAC_APP_DEST}"
@@ -196,21 +208,22 @@ if [ "${CLI_ONLY}" != "1" ]; then
                 if [ -d "${TMP_DIR}/desktop/Thocci.app" ]; then
                     rm -rf "${MAC_APP_DEST}"
                     mv "${TMP_DIR}/desktop/Thocci.app" "${MAC_APP_DEST}"
+                    xattr -dr com.apple.quarantine "${MAC_APP_DEST}" >/dev/null 2>&1 || true
                     DESKTOP_LAUNCH_TARGET="${MAC_APP_DEST}"
                 fi
             fi
         fi
     else
         # Linux desktop binary + XDG desktop launcher + ESC icons
-        LOCAL_ICON_DIR="${SCRIPT_DIR}/assets/desktop/brand/png"
-        if [ -f "${SCRIPT_DIR}/target/release/${DESKTOP_BIN_NAME}" ]; then
+        LOCAL_ICON_DIR="${SCRIPT_DIR:+${SCRIPT_DIR}/assets/desktop/brand/png}"
+        if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/target/release/${DESKTOP_BIN_NAME}" ]; then
             echo "Installing desktop app from local release build..."
             rm -f "${DESKTOP_TARGET_PATH}"
             cp "${SCRIPT_DIR}/target/release/${DESKTOP_BIN_NAME}" "${DESKTOP_TARGET_PATH}"
             chmod +x "${DESKTOP_TARGET_PATH}"
             install_linux_desktop_entry "${DESKTOP_TARGET_PATH}" "${LOCAL_ICON_DIR}"
             DESKTOP_LAUNCH_TARGET="${DESKTOP_TARGET_PATH}"
-        elif [ -f "${SCRIPT_DIR}/${DESKTOP_BIN_NAME}" ]; then
+        elif [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/${DESKTOP_BIN_NAME}" ]; then
             echo "Installing desktop app from local binary..."
             rm -f "${DESKTOP_TARGET_PATH}"
             cp "${SCRIPT_DIR}/${DESKTOP_BIN_NAME}" "${DESKTOP_TARGET_PATH}"

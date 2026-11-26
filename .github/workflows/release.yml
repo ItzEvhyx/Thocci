@@ -105,18 +105,23 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             platform: windows
+            bundles: nsis,msi
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             platform: linux
+            bundles: deb
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             platform: linux
+            bundles: deb
           - target: x86_64-apple-darwin
             os: macos-latest
             platform: macos
+            bundles: app,dmg
           - target: aarch64-apple-darwin
             os: macos-latest
             platform: macos
+            bundles: app,dmg
 
     steps:
       - uses: actions/checkout@v4
@@ -145,8 +150,8 @@ jobs:
 
       - name: Install Node dependencies and build desktop bundles
         run: |
-          npm install
-          npm run build -- --target ${{ matrix.target }}
+          npm ci
+          npm run build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       - name: Determine version
         id: version
@@ -169,7 +174,7 @@ jobs:
           ARCHIVE="dist-desktop/thocci-desktop-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
           tar czf "$ARCHIVE" -C "$STAGE" thocci-app icons
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
-          find "target/${{ matrix.target }}/release/bundle" -maxdepth 2 \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -exec cp {} dist-desktop/ \; || true
+          find "target/${{ matrix.target }}/release/bundle" -maxdepth 3 \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -exec cp {} dist-desktop/ \; || true
 
       - name: Package desktop installer archive (macOS)
         if: matrix.platform == 'macos'

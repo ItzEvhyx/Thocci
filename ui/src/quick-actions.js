@@ -120,6 +120,22 @@ export async function mountQuickActions(root) {
     }, 145);
   }
 
+  // Prevent mouse clicks on Quick Actions buttons from leaving a sticky focus outline
+  shell.addEventListener(
+    "mousedown",
+    (ev) => {
+      if (ev.button !== 0) return;
+      const btn = ev.target instanceof Element ? ev.target.closest("button") : null;
+      if (btn) {
+        if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+          document.activeElement.blur();
+        }
+        ev.preventDefault();
+      }
+    },
+    true,
+  );
+
   // Click anywhere outside the popup card dismisses it (just like Calendar / Wi-Fi / Media popups)
   viewport.addEventListener("pointerdown", (ev) => {
     if (!layerBackdropMode) return;

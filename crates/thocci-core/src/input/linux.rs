@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use evdev::{Device, EventType, KeyCode};
 
@@ -153,14 +153,25 @@ fn is_event_node(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn input_dir_mtime() -> Option<SystemTime> {
+    fs::metadata("/dev/input").ok()?.modified().ok()
+}
+
 fn poll_loop(mut devices: Vec<OpenedKeyboard>, on_key: KeyCallback, stop: Arc<AtomicBool>) {
     let mut last_rescan = Instant::now();
+    let mut last_dir_mtime = input_dir_mtime();
+    let mut force_rescan = false;
 
     while !stop.load(Ordering::Acquire) {
         if last_rescan.elapsed() >= RESCAN_INTERVAL {
-            let open_paths: HashSet<PathBuf> = devices.iter().map(|d| d.path.clone()).collect();
-            if let Ok(newly_found) = discover_keyboards(&open_paths) {
-                devices.extend(newly_found);
+            let cur_mtime = input_dir_mtime();
+            if force_rescan || devices.is_empty() || cur_mtime != last_dir_mtime {
+                let open_paths: HashSet<PathBuf> = devices.iter().map(|d| d.path.clone()).collect();
+                if let Ok(newly_found) = discover_keyboards(&open_paths) {
+                    devices.extend(newly_found);
+                }
+                last_dir_mtime = cur_mtime;
+                force_rescan = false;
             }
             last_rescan = Instant::now();
         }
@@ -211,6 +222,7 @@ fn poll_loop(mut devices: Vec<OpenedKeyboard>, on_key: KeyCallback, stop: Arc<At
 
         for idx in disconnected.into_iter().rev() {
             let lost = devices.remove(idx);
+            force_rescan = true;
             log::warn!("Lost keyboard device {}", lost.path.display());
         }
     }

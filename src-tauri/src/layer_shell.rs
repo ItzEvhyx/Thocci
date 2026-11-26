@@ -283,12 +283,17 @@ fn install_event_pump() {
         return;
     }
 
-    glib::timeout_add_local(Duration::from_millis(50), || {
+    // Low-frequency fallback pump for compositor-initiated Close/Configure events
+    // (explicit show/resize paths roundtrip and flush immediately on demand).
+    glib::timeout_add_local(Duration::from_millis(250), || {
         let to_hide = LAYER_RUNTIME.with(|cell| {
             let mut borrow = cell.borrow_mut();
             let Some(rt) = borrow.as_mut() else {
                 return Vec::new();
             };
+            if rt.active.is_empty() {
+                return Vec::new();
+            }
             let _ = rt.event_queue.dispatch_pending(&mut rt.state);
             process_pending_events(rt)
         });
@@ -300,6 +305,9 @@ fn install_event_pump() {
 }
 
 fn process_pending_events(rt: &mut LayerShellRuntime) -> Vec<gtk::ApplicationWindow> {
+    if rt.state.pending_configures.is_empty() && rt.state.closed_labels.is_empty() {
+        return Vec::new();
+    }
     let configures: Vec<(String, (u32, u32))> = rt.state.pending_configures.drain().collect();
     for (label, (w, h)) in configures {
         if let Some(active) = rt.active.get_mut(&label) {

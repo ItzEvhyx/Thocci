@@ -574,6 +574,12 @@ export async function mountInteractiveKeyboard(
     // Pointer / touch audition handlers
     g.addEventListener("pointerdown", (ev) => {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement !== document.body
+      ) {
+        document.activeElement.blur();
+      }
       ev.preventDefault();
       try {
         g.setPointerCapture(ev.pointerId);

@@ -26,20 +26,6 @@
         "resizable": true,
         "center": true,
         "visible": false
-      },
-      {
-        "label": "quick-actions",
-        "title": "Thocci Quick Actions",
-        "url": "index.html?view=quick-actions",
-        "width": 288,
-        "height": 282,
-        "resizable": true,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "shadow": false,
-        "visible": false
       }
     ],
     "security": {

@@ -351,7 +351,9 @@ export function mountTypingGame(container, { onBackToThocci, onStateChange }) {
       clearTimers();
       onBackToThocci?.();
     });
-    container.querySelector('[data-action="start"]')?.focus({ preventScroll: true });
+    if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
   }
 
   function startCountdown() {
@@ -485,7 +487,10 @@ export function mountTypingGame(container, { onBackToThocci, onStateChange }) {
       clearTimers();
       onBackToThocci?.();
     });
-    container.querySelector('[data-action="reset"]')?.focus({ preventScroll: true });
+    // Blur active element so trailing keystrokes at 0s never accidentally trigger Reset
+    if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
   }
 
   /**

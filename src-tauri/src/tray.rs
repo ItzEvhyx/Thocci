@@ -6,7 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, Wry};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, WebviewUrl,
+    WebviewWindowBuilder, Wry,
+};
 
 use crate::platform::{compute_popover_position, fallback_popover_position, PixelRect};
 use crate::AppState;
@@ -187,14 +190,51 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-pub fn toggle_quick_actions_anchored(app: &AppHandle<Wry>, anchor: Option<Rect>) {
-    let Some(win) = app.get_webview_window("quick-actions") else {
-        return;
+/// Lazily construct the Quick Actions WebView window on first demand so startup
+/// and everyday dashboard use never spawn an idle second WebKit/WebView process.
+/// Returns `(window, created_now)`.
+fn ensure_quick_actions_window(app: &AppHandle<Wry>) -> Option<(tauri::WebviewWindow<Wry>, bool)> {
+    if let Some(existing) = app.get_webview_window("quick-actions") {
+        return Some((existing, false));
+    }
+
+    let builder = WebviewWindowBuilder::new(
+        app,
+        "quick-actions",
+        WebviewUrl::App("index.html?view=quick-actions".into()),
+    )
+    .title("Thocci Quick Actions")
+    .inner_size(QUICK_ACTIONS_LOGICAL_W, QUICK_ACTIONS_LOGICAL_H)
+    .resizable(cfg!(target_os = "linux"))
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .shadow(false)
+    .visible(false);
+
+    let win = match builder.build() {
+        Ok(win) => win,
+        Err(err) => {
+            log::error!("Failed to create Quick Actions window lazily: {err}");
+            return None;
+        }
     };
 
-    if win.is_visible().unwrap_or(false) {
-        hide_quick_actions_window(app);
-        return;
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = win.set_resizable(false);
+    }
+
+    Some((win, true))
+}
+
+pub fn toggle_quick_actions_anchored(app: &AppHandle<Wry>, anchor: Option<Rect>) {
+    if let Some(win) = app.get_webview_window("quick-actions") {
+        if win.is_visible().unwrap_or(false) {
+            hide_quick_actions_window(app);
+            return;
+        }
     }
 
     // Avoid immediately re-opening if focus loss just hid the popover from the same tray click.
@@ -208,9 +248,11 @@ pub fn toggle_quick_actions_anchored(app: &AppHandle<Wry>, anchor: Option<Rect>)
 }
 
 pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
-    let Some(win) = app.get_webview_window("quick-actions") else {
+    let Some((win, created_now)) = ensure_quick_actions_window(app) else {
         return;
     };
+    #[cfg(not(target_os = "linux"))]
+    let _ = created_now;
 
     app.state::<AppState>()
         .last_quick_actions_show_ms
@@ -221,6 +263,22 @@ pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
         let app_clone = app.clone();
         let win_clone = win.clone();
         let _ = app.run_on_main_thread(move || {
+            if created_now {
+                let (mon_w, mon_h) =
+                    crate::layer_shell::current_monitor_logical_size().unwrap_or((1920, 1080));
+                let _ = crate::layer_shell::setup_window(
+                    &app_clone,
+                    &win_clone,
+                    "thocci-quick-actions",
+                    crate::layer_shell::LayerKind::BarPopup,
+                    crate::layer_shell::PanelRect {
+                        x: 0,
+                        y: 0,
+                        width: mon_w,
+                        height: mon_h,
+                    },
+                );
+            }
             let placement = crate::layer_shell::prepare_bar_popup(
                 "quick-actions",
                 QUICK_ACTIONS_LOGICAL_W as i32,
@@ -258,6 +316,10 @@ pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
 }
 
 pub fn hide_quick_actions_window(app: &AppHandle<Wry>) {
+    if app.get_webview_window("quick-actions").is_none() {
+        return;
+    }
+
     #[cfg(target_os = "linux")]
     if crate::layer_shell::is_active() {
         let app_clone = app.clone();

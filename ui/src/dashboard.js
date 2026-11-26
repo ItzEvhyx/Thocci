@@ -15,6 +15,30 @@ import { mountInteractiveKeyboard } from "./keyboard.js";
 import { mountMascotStage } from "./stage.js";
 import { mountTypingGame } from "./typing-game.js";
 
+export function isTextEditableElement(el) {
+  if (!el || typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toUpperCase();
+  if (tag === "TEXTAREA") return true;
+  if (el.isContentEditable) return true;
+  if (tag === "INPUT") {
+    const type = (el.type || el.getAttribute?.("type") || "text").toLowerCase();
+    return !["range", "button", "submit", "reset", "checkbox", "radio"].includes(type);
+  }
+  return false;
+}
+
+export function isPointerBlurControl(el) {
+  if (!el || typeof el.tagName !== "string") return false;
+  const tag = el.tagName.toUpperCase();
+  if (tag === "BUTTON") return true;
+  if (tag === "INPUT") {
+    const type = (el.type || el.getAttribute?.("type") || "text").toLowerCase();
+    return ["range", "button", "submit", "reset", "checkbox", "radio"].includes(type);
+  }
+  const role = el.getAttribute?.("role");
+  return role === "button" || role === "switch";
+}
+
 export function filterCatalog(catalog, query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return catalog;
@@ -58,9 +82,12 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     return systemDarkQuery.matches ? "dark" : "light";
   }
 
+  let stage = null;
+
   function applyTheme() {
     const theme = resolvedTheme();
     document.documentElement.setAttribute("data-theme", theme);
+    stage?.setTheme?.(theme);
     const themeBtn = root.querySelector("#themeToggleBtn");
     if (themeBtn) {
       if (theme === "dark") {
@@ -323,6 +350,55 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const setupGuideModal = root.querySelector("#setupGuideModal");
   const fileDialogScrim = root.querySelector("#fileDialogScrim");
 
+  // Prevent pointer clicks on buttons / switches / sliders from leaving sticky DOM
+  // focus (and `:focus-visible` highlights) so Space / Enter immediately return to
+  // keyboard previewing instead of re-triggering the last clicked control.
+  // Intentional keyboard Tab navigation and text inputs (search, window size) stay intact.
+  function blurActiveElement(exceptEl = null) {
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active !== exceptEl
+    ) {
+      active.blur();
+    }
+  }
+
+  dashboardShell?.addEventListener(
+    "mousedown",
+    (ev) => {
+      if (ev.button !== 0) return;
+      const target = ev.target instanceof Element ? ev.target : null;
+      if (!target) return;
+
+      const editable = target.closest(
+        'input:not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"]',
+      );
+      if (editable) return;
+
+      const control = target.closest(
+        'button, input[type="range"], input[type="checkbox"], input[type="radio"], [role="switch"]',
+      );
+      blurActiveElement(null);
+      if (control && isPointerBlurControl(control)) {
+        ev.preventDefault();
+      }
+    },
+    true,
+  );
+
+  dashboardShell?.addEventListener("click", (ev) => {
+    if (ev.detail === 0) return; // preserve keyboard-initiated Tab + Enter/Space focus
+    const target = ev.target instanceof Element ? ev.target : null;
+    const control = target?.closest?.(
+      'button, input[type="range"], input[type="checkbox"], input[type="radio"], [role="switch"]',
+    );
+    if (control && document.activeElement === control) {
+      control.blur();
+    }
+  });
+
   // EvhOS Settings-style launch entrance animation (OutExpo base + staggered sidebar/content)
   let entranceTimer = null;
   function playEntranceAnimation() {
@@ -523,7 +599,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     const wsRect = workspaceInner.getBoundingClientRect();
     const stageRect = stageCard.getBoundingClientRect();
     const stageCenterX = stageRect.left - wsRect.left + stageRect.width / 2;
-    const targetY = stageRect.top - wsRect.top + Math.max(20, stageRect.height * 0.22);
+    const targetY = stageRect.top - wsRect.top + Math.max(10, stageRect.height * 0.075);
     const maxRowW = Math.max(120, stageRect.width - 72);
 
     // Never allow characters to overflow the row area: drop oldest leftmost first
@@ -654,11 +730,19 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   let typingGame = null;
   let stageSwapping = false;
   let stageSwapTimer = null;
+  let challengeSuspended = false;
+  let dashboardHidden = false;
+
+  function syncStageSuspension() {
+    stage?.setSuspended?.(challengeSuspended || dashboardHidden);
+  }
 
   function openTypingChallenge() {
     if (typingGame || stageSwapping) return;
     stageSwapping = true;
     clearTypedStream();
+    challengeSuspended = true;
+    syncStageSuspension();
     if (challengeTriggerBtn) challengeTriggerBtn.hidden = true;
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -704,7 +788,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       typingGameCard.hidden = true;
       typingGameCard.classList.remove("stage-pop-out", "stage-pop-in");
       stageCard.hidden = false;
+      challengeSuspended = false;
+      syncStageSuspension();
       if (challengeTriggerBtn) challengeTriggerBtn.hidden = false;
+      blurActiveElement(null);
       if (!reducedMotion) {
         stageCard.classList.remove("stage-pop-out", "stage-pop-in");
         void stageCard.offsetWidth;
@@ -744,14 +831,14 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   window.addEventListener("keydown", handleTypingGameGuard);
 
   // Mount live mascot stage & modern MacBook interactive keyboard (stationary across sidebar slides)
-  const stage = await mountMascotStage(stageCard, {
+  stage = await mountMascotStage(stageCard, {
     initialTheme: resolvedTheme(),
     initialAnimated: prefs.animate_mascot,
   });
 
   const keyboard = await mountInteractiveKeyboard(keyboardCard, {
     onVisualActivity() {
-      if (!typingGame) {
+      if (!typingGame && !stageSwapping && setupGuideModal.hidden) {
         stage.reactToKeystroke();
       }
     },
@@ -1172,6 +1259,9 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       clearTimeout(volumeDebounceTimer);
       volumeDebounceTimer = null;
     }
+    if (document.activeElement === volumeSlider) {
+      volumeSlider.blur();
+    }
     void flushVolume(val);
   };
   volumeSlider.addEventListener("pointerup", endVolumeDrag);
@@ -1197,12 +1287,19 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   });
 
   // Browse soundpacks & Back navigation
-  browseSoundpacksBtn.addEventListener("click", () => {
-    setSidebarView("soundpacks", { animate: true, manageFocus: true });
+  browseSoundpacksBtn.addEventListener("click", (ev) => {
+    setSidebarView("soundpacks", { animate: true, manageFocus: ev.detail === 0 });
   });
 
-  spBackBtn.addEventListener("click", () => {
-    setSidebarView("settings", { animate: true, manageFocus: true });
+  spBackBtn.addEventListener("click", (ev) => {
+    setSidebarView("settings", { animate: true, manageFocus: ev.detail === 0 });
+  });
+
+  spSearchInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      spSearchInput.blur();
+    }
   });
 
   spSearchInput.addEventListener("input", () => {
@@ -1409,7 +1506,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   });
 
   // ── Setup Guide Modal ─────────────────────────────────────────────────────
-  function openSetupGuide() {
+  let setupGuideOpenedByKeyboard = false;
+
+  function openSetupGuide({ focusClose = false } = {}) {
+    setupGuideOpenedByKeyboard = Boolean(focusClose);
     const info = platformInfo || {
       os: "desktop",
       arch: "",
@@ -1539,29 +1639,39 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       }
     });
 
-    closeBtn.addEventListener("click", closeSetupGuide);
-    doneBtn.addEventListener("click", closeSetupGuide);
+    closeBtn.addEventListener("click", (ev) => closeSetupGuide({ restoreFocus: ev.detail === 0 }));
+    doneBtn.addEventListener("click", (ev) => closeSetupGuide({ restoreFocus: ev.detail === 0 }));
     refreshBtn.addEventListener("click", async () => {
       platformInfo = await api.getPlatformInfo().catch(() => platformInfo);
       await reconcileAll();
-      openSetupGuide();
+      openSetupGuide({ focusClose: false });
     });
     quitBtn.addEventListener("click", () => {
       void api.quitApp().catch(() => {});
     });
 
-    closeBtn.focus();
+    if (focusClose) {
+      closeBtn.focus({ preventScroll: true });
+    } else {
+      blurActiveElement(null);
+    }
   }
 
-  function closeSetupGuide() {
+  function closeSetupGuide({ restoreFocus = false } = {}) {
     setupGuideModal.hidden = true;
     setupGuideModal.innerHTML = "";
-    setupGuideBtn.focus();
+    if (restoreFocus) {
+      setupGuideBtn.focus({ preventScroll: true });
+    } else {
+      blurActiveElement(null);
+    }
   }
 
-  setupGuideBtn.addEventListener("click", openSetupGuide);
+  setupGuideBtn.addEventListener("click", (ev) => {
+    openSetupGuide({ focusClose: ev.detail === 0 });
+  });
   setupGuideModal.addEventListener("click", (ev) => {
-    if (ev.target === setupGuideModal) closeSetupGuide();
+    if (ev.target === setupGuideModal) closeSetupGuide({ restoreFocus: false });
   });
 
   // Global keyboard shortcuts (Escape closes modal or Soundpacks sidebar)
@@ -1569,12 +1679,17 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     if (ev.key === "Escape") {
       if (!setupGuideModal.hidden) {
         ev.preventDefault();
-        closeSetupGuide();
+        closeSetupGuide({ restoreFocus: setupGuideOpenedByKeyboard });
+        return;
+      }
+      if (document.activeElement === spSearchInput) {
+        ev.preventDefault();
+        spSearchInput.blur();
         return;
       }
       if (sidebarView === "soundpacks") {
         ev.preventDefault();
-        setSidebarView("settings", { animate: true, manageFocus: true });
+        setSidebarView("settings", { animate: true, manageFocus: false });
       }
     }
   }
@@ -1618,8 +1733,15 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   });
 
   const unlistenShown = await listenEvent("thocci://dashboard-shown", () => {
+    dashboardHidden = false;
+    syncStageSuspension();
     playEntranceAnimation();
     void reconcileAll();
+  });
+
+  const unlistenHidden = await listenEvent("thocci://dashboard-hidden", () => {
+    dashboardHidden = true;
+    syncStageSuspension();
   });
 
   const unlistenFileDialog = await listenEvent("thocci://file-dialog-state", (isOpen) => {
@@ -1657,6 +1779,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       stage.destroy();
       unlistenOverlay();
       unlistenShown();
+      unlistenHidden();
       unlistenFileDialog();
       unlistenState();
       unlistenCatalog();

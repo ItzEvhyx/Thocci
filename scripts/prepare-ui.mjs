@@ -30,6 +30,7 @@ const requiredFiles = [
   path.join("mascot", "thocci-quick-actions.svg"),
   path.join("mascot", "thocci-excited.svg"),
   path.join("mascot", "thocci-sleeping.svg"),
+  path.join("mascot", "thocci-pillow.svg"),
   path.join("mascot", "slide-trail.svg"),
   path.join("mascot", "jump-shadow.svg"),
   path.join("mascot", "sleep-marks.svg"),

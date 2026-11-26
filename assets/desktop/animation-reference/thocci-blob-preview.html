@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thocci animation preview</title>
+<style>
+  html { color-scheme: light dark; background: light-dark(#ececef, #111112); }
+  body { box-sizing: border-box; max-width: 990px; margin: 0 auto; padding: clamp(10px, 4vw, 42px); }
+</style>
+</head>
+<body>
+<main>
+<section id="thocci-blob-motion" aria-label="Thocci animation preview" data-state="sleeping">
+  <header>
+    <h2>Thocci</h2>
+    <span class="thocci-state" role="status">Sleeping</span>
+  </header>
+  <div class="thocci-stage">
+    <svg viewBox="0 0 850 304" role="img" aria-label="Thocci, the black blob cat, naps on a pillow and reacts to your typing.">
+      <defs>
+        <linearGradient id="thocci-pillow-top" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+          <stop stop-color="var(--pillow-light)"/>
+          <stop offset="1" stop-color="var(--pillow-dark)"/>
+        </linearGradient>
+      </defs>
+      <g data-pillow>
+        <ellipse cx="0" cy="24" rx="103" ry="11" fill="#101014" opacity=".22"/>
+        <path d="M-99 4C-93-6-72-13-49-13c18 0 35 4 49 4s32-4 50-4c22 0 42 7 49 17 6 10-2 18-16 22-20 6-47 3-65 4-13 1-23 1-36 0-19-1-46 2-65-4-14-4-22-12-16-22Z" fill="url(#thocci-pillow-top)" stroke="var(--pillow-edge)" stroke-width="1.25"/>
+        <path d="M-93 17c19 9 42 5 65 7 18 2 38 2 56 0 23-2 46 2 65-7" fill="none" stroke="var(--pillow-stitch)" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M-88 8q9-4 15-3m146 0q6-1 15 3" fill="none" stroke="var(--pillow-stitch)" stroke-width="1.05" stroke-linecap="round"/>
+      </g>
+      <ellipse data-shadow cx="425" cy="243" rx="62" ry="8" fill="#111114" opacity=".2"/>
+      <g data-cat transform="translate(425 245) scale(1 .94)">
+        <g transform="translate(-80 -119)">
+          <path data-body fill="#17181B" stroke="var(--cat-rim)" stroke-width=".95" d="M14 106C5 100 0 90 0 79c0-12 5-24 13-35l13-27c3-7 11-8 15-2l9 12c12-6 26-10 43-10l19-14c6-5 13-3 16 3l24 43c5 10 8 20 8 31 0 13-6 24-17 29-17 7-39 10-63 10-26 0-51-3-66-13Z"/>
+          <g data-face>
+            <g data-open fill="#FDFDFF" opacity="0">
+              <rect x="76" y="49" width="11" height="20" rx="5.5"/>
+              <rect x="97" y="48" width="11" height="20" rx="5.5"/>
+            </g>
+            <g data-shocked fill="#FDFDFF" opacity="0">
+              <circle cx="80" cy="57" r="8"/>
+              <circle cx="104" cy="56" r="8"/>
+            </g>
+            <path data-closed d="M78 56c3 5 7 5 10 0m10 0c3 5 7 5 10 0" fill="none" stroke="#fff" stroke-width="2.7" stroke-linecap="round"/>
+            <path data-happy d="m76 63 6-6 6 6m9 0 6-6 6 6" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" opacity="0"/>
+          </g>
+        </g>
+      </g>
+      <g data-zzz fill="var(--sleep-ink)" text-anchor="middle" dominant-baseline="middle" aria-hidden="true">
+        <text>Z</text><text>Z</text><text>Z</text>
+      </g>
+    </svg>
+    <div class="thocci-bubble" aria-live="polite" aria-atomic="true"></div>
+  </div>
+  <label><span>Try typing</span><input type="text" placeholder="Type a few words…" autocomplete="off" spellcheck="false"></label>
+</section>
+<style>
+  #thocci-blob-motion {
+    color-scheme: light dark;
+    --frame: light-dark(#f8f8f9, #151516);
+    --text: light-dark(#17181b, #f2f2f3);
+    --muted: light-dark(#53545c, #bdbdc3);
+    --rim: light-dark(#d5d5da, #38383c);
+    --stage-top: light-dark(#e9e9ee, #242425);
+    --stage-bottom: light-dark(#d2d2d9, #343436);
+    --pillow-light: light-dark(#f8f8fa, #d6d6d9);
+    --pillow-dark: light-dark(#e3e3e7, #a6a6ad);
+    --pillow-edge: light-dark(#adadb5, #8d8d94);
+    --pillow-stitch: light-dark(#b9b9c0, #8b8b92);
+    --cat-rim: light-dark(#17181b, #4e4e54);
+    --sleep-ink: light-dark(#393943, #e3e3e8);
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    width: 100%;
+    padding: clamp(12px, 3vw, 22px);
+    border: 1px solid var(--rim);
+    border-radius: 20px;
+    background: var(--frame);
+    color: var(--text);
+    font: 14px/1.45 system-ui, sans-serif;
+  }
+  #thocci-blob-motion header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  #thocci-blob-motion h2 { margin: 0; font: 650 22px/1.2 system-ui, sans-serif; color: inherit; letter-spacing: -.025em; }
+  #thocci-blob-motion .thocci-state { color: var(--muted); font-size: 12px; }
+  #thocci-blob-motion .thocci-stage {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 216px;
+    aspect-ratio: 850 / 304;
+    overflow: hidden;
+    border: 1px solid var(--rim);
+    border-radius: 15px;
+    background: linear-gradient(160deg, var(--stage-top), var(--stage-bottom));
+  }
+  #thocci-blob-motion svg { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+  #thocci-blob-motion .thocci-bubble {
+    position: absolute;
+    z-index: 1;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: calc(100% - 16px);
+    padding: 7px 11px;
+    border: 1px solid var(--rim);
+    border-radius: 12px;
+    background: light-dark(#fff, #262628);
+    color: var(--text);
+    font: 500 13px/1.35 system-ui, sans-serif;
+    text-align: center;
+    box-shadow: 0 3px 12px #10101426;
+    transform: translate(-50%, calc(-100% + 4px));
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .19s ease, transform .22s ease;
+  }
+  #thocci-blob-motion .thocci-bubble[data-speaking] { transform: translate(-50%, -100%); opacity: 1; }
+  #thocci-blob-motion .thocci-bubble[data-offstage] { opacity: 0; }
+  #thocci-blob-motion .thocci-bubble::after {
+    content: "";
+    position: absolute;
+    left: var(--tail, 50%);
+    bottom: -5px;
+    width: 8px;
+    height: 8px;
+    border-right: 1px solid var(--rim);
+    border-bottom: 1px solid var(--rim);
+    background: inherit;
+    transform: translateX(-50%) rotate(45deg);
+  }
+  #thocci-blob-motion .thocci-bubble[data-tail="left"]::after {
+    left: -5px;
+    bottom: calc(50% - 4px);
+    transform: rotate(135deg);
+  }
+  #thocci-blob-motion .thocci-bubble[data-tail="right"]::after {
+    left: auto;
+    right: -5px;
+    bottom: calc(50% - 4px);
+    transform: rotate(-45deg);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #thocci-blob-motion .thocci-bubble { transition: none; }
+  }
+  #thocci-blob-motion label { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: 12px; }
+  #thocci-blob-motion input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--rim);
+    border-radius: 9px;
+    background: light-dark(#fff, #222224);
+    color: var(--text);
+    font: 16px/1.3 system-ui, sans-serif;
+  }
+  #thocci-blob-motion input::placeholder { color: var(--muted); }
+  #thocci-blob-motion input:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+  #thocci-blob-motion text { font: 600 15px system-ui, sans-serif; }
+</style>
+<script>
+(() => {
+  const root = document.getElementById("thocci-blob-motion");
+  const scene = root.querySelector("svg");
+  const field = root.querySelector("input");
+  const status = root.querySelector(".thocci-state");
+  const bubble = root.querySelector(".thocci-bubble");
+  const cat = scene.querySelector("[data-cat]");
+  const shadow = scene.querySelector("[data-shadow]");
+  const pillow = scene.querySelector("[data-pillow]");
+  const face = scene.querySelector("[data-face]");
+  const open = scene.querySelector("[data-open]");
+  const [leftEye, rightEye] = open.children;
+  const closed = scene.querySelector("[data-closed]");
+  const happy = scene.querySelector("[data-happy]");
+  const shocked = scene.querySelector("[data-shocked]");
+  const marks = [...scene.querySelectorAll("[data-zzz] text")];
+  const motion = matchMedia("(prefers-reduced-motion: reduce)");
+  const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+  const mix = (a, b, u) => a + (b - a) * u;
+  const ease = (u) => u ** 2 * (3 - 2 * u);
+  const pulse = (u) => Math.sin(Math.PI * clamp(u));
+  const follow = (current, target, rate, dt) => mix(current, target, 1 - Math.exp(-rate * dt));
+  const labels = {
+    sleeping: "Sleeping", waking: "Waking up", alert: "Listening",
+    scamper: "Scampering", peek: "Peeking", pounce: "Pouncing",
+    curious: "Investigating", wiggle: "Playing", zip: "Zooming", braking: "Catching his breath",
+    returning: "Heading back", settling: "Getting comfy",
+  };
+  const phrases = {
+    waking: ["Oh, hi!", "I'm up!", "Was that a key?"],
+    alert: ["What are we typing?", "I'm listening."],
+    peek: ["Psst. Over here.", "You found me!", "Boo."],
+    pounce: ["Got it!", "Boing!"],
+    curious: ["What was that?", "Hmm… interesting."],
+    wiggle: ["Look what I can do!", "One more hop!"],
+    zip: ["Zoomies!", "Catch me if you can."],
+    braking: ["Hey slow down a bit!", "Whew! How many fingers do you have?", "My paws can’t keep up!"],
+    returning: ["Where's my pillow?", "That was fun."],
+  };
+  const games = ["peek", "pounce", "curious", "wiggle", "zip"];
+  const corners = [
+    { name: "top-left", side: -1, upper: true, expression: "curious" },
+    { name: "bottom-right", side: 1, upper: false, expression: "excited" },
+    { name: "top-right", side: 1, upper: true, expression: "shocked" },
+    { name: "bottom-left", side: -1, upper: false, expression: "wink" },
+  ];
+  const activeStates = new Set([...games, "scamper", "braking"]);
+  const phraseIndex = new Map();
+  const recentKeys = [];
+
+  let width = 850;
+  let sceneScale = 1;
+  let state = "sleeping";
+  let time = 0, entered = 0, previousFrame = 0, request = 0;
+  let lastKey = -Infinity, lastInput = -Infinity, energy = 0;
+  let x = .5, y = 245, vx = 0, vy = 0, gaze = 0, glanceY = 0, lean = 0;
+  let eye = 0, grin = 0, squeeze = .94, lift = 0, snooze = 1, gait = 0;
+  let surprised = 0, squint = 0;
+  let lastSpeech = -Infinity, speechUntil = 0, bubbleHalf = 0, bubbleHeight = 0, warned = false;
+  let gameBag = ["zip", "peek"], lastGame = "";
+  let cornerIndex = 0, peeksLeft = 0, corner = corners[0];
+  let zoomLeg = 0, zoom = 1;
+  let move = null;
+
+  function speak(cue, urgent = false) {
+    if (!phrases[cue] || (!urgent && time - lastSpeech < 3.4)) return;
+    // Save chatter for moments both ears are roughly within the stage.
+    if (!urgent && cue !== "peek" && (x < .12 || x > .88)) return;
+    const options = phrases[cue];
+    const index = phraseIndex.get(cue) ?? 0;
+    phraseIndex.set(cue, (index + 1) % options.length);
+    bubble.textContent = options[index];
+    bubbleHalf = bubble.offsetWidth / 2;
+    bubbleHeight = bubble.offsetHeight;
+    bubble.setAttribute("data-speaking", "");
+    lastSpeech = time;
+    speechUntil = time + (urgent ? 2.85 : 2.2);
+  }
+
+  function enter(next) {
+    const changed = state !== next;
+    state = next;
+    entered = time;
+    root.dataset.state = next;
+    if (next === "peek") root.dataset.corner = corner.name;
+    else delete root.dataset.corner;
+    if (!changed) return;
+    status.textContent = labels[next];
+    if (next === "sleeping") speechUntil = time;
+    else if (next !== "peek" && next !== "braking") speak(next);
+  }
+
+  function travel(next, nextX, nextY, length, arc = 0) {
+    enter(next);
+    move = { x, y, vx, vy, nextX, nextY, length, arc, start: time };
+  }
+
+  function updateTravel(dt) {
+    if (!move) return false;
+    const u = clamp((time - move.start) / move.length);
+    const carry = u * (1 - u) ** 2;
+    const bend = 16 * u ** 2 * (1 - u) ** 2;
+    const nextX = mix(move.x, move.nextX, ease(u)) + carry * clamp(move.vx * move.length, -.25, .25);
+    const nextY = mix(move.y, move.nextY, ease(u)) + carry * clamp(move.vy * move.length, -78, 78) + bend * move.arc;
+    vx = (nextX - x) / dt;
+    vy = (nextY - y) / dt;
+    x = nextX;
+    y = nextY;
+    if (u < 1) return false;
+    move = null;
+    vx = vy = 0;
+    return true;
+  }
+
+  function play() {
+    if (!gameBag.length) {
+      gameBag = [...games];
+      for (let i = gameBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [gameBag[i], gameBag[j]] = [gameBag[j], gameBag[i]];
+      }
+      if (gameBag.at(-1) === lastGame) [gameBag[0], gameBag[gameBag.length - 1]] = [gameBag.at(-1), gameBag[0]];
+    }
+    lastGame = gameBag.pop();
+    const towardCenter = x < .5 ? 1 : -1;
+    if (lastGame === "peek") {
+      peeksLeft = 2;
+      approachCorner();
+    } else if (lastGame === "pounce") {
+      travel("pounce", clamp(x + .31 * towardCenter, .18, .82), 255, .88, 5);
+    } else if (lastGame === "curious") {
+      travel("curious", clamp(x + .19 * towardCenter, .26, .74), 242, .67);
+    } else if (lastGame === "wiggle") {
+      travel("wiggle", clamp(x + .19 * towardCenter, .19, .81), 261, .95, 4);
+    } else {
+      zoomLeg = 0;
+      travel("zip", towardCenter > 0 ? .78 : .22, 169, .66, -19);
+    }
+  }
+
+  function approachCorner() {
+    corner = corners[cornerIndex];
+    const exitX = corner.side < 0 ? -.04 : 1.04;
+    const exitY = corner.upper ? -11 : 415;
+    const distance = Math.hypot((exitX - x) * width, exitY - y);
+    travel("scamper", exitX, exitY, clamp(.31 + distance / 1100, .55, 1.04), corner.upper ? -24 : 17);
+  }
+
+  function advanceZoom() {
+    zoomLeg += 1;
+    if (zoomLeg === 1) travel("zip", .5 + (x > .5 ? -.06 : .06), 281, .78, 16);
+    else if (zoomLeg === 2) travel("zip", x < .5 ? .62 : .38, 248, .50, -7);
+    else play();
+  }
+
+  function returnHome() {
+    travel("returning", .5, 245, .46 + Math.abs(.5 - x) * 1.17, 10);
+  }
+
+  function update(dt) {
+    const age = time - entered;
+    energy *= Math.exp(-dt / .67);
+    const sprint = !motion.matches && energy > 1.21 && time - lastKey < .48;
+    const slowing = energy < .71 && time - lastKey > .50;
+    const arrived = updateTravel(dt);
+    if (time > speechUntil) bubble.removeAttribute("data-speaking");
+
+    if (!warned && state !== "waking" && time - lastKey < .18 && recentKeys.length >= 9 && time - recentKeys.at(-9) < .96) {
+      warned = true;
+      speak("braking", true);
+      if (!motion.matches) {
+        travel("braking", clamp(x + vx * .16, .18, .82), clamp(y, 221, 259), .58);
+        return;
+      }
+    }
+
+    if (state === "waking" && age > .53) {
+      if (sprint) play();
+      else enter("alert");
+    } else if (state === "alert" && sprint) {
+      play();
+    } else if (state === "alert" && time - lastKey > 1.45) {
+      enter("settling");
+    } else if (activeStates.has(state)) {
+      if (slowing && state !== "braking") {
+        returnHome();
+      } else if (state === "scamper" && arrived) {
+        const rim = corner.side < 0 ? 0 : 1;
+        const inset = corner.side < 0 ? 31 : 50;
+        travel("peek", rim - corner.side * inset / width, corner.upper ? 109 : 334, .43);
+      } else if (state === "peek" && arrived) {
+        cornerIndex = (cornerIndex + 1) % corners.length;
+        peeksLeft -= 1;
+        speak("peek");
+      } else if (state === "zip" && arrived && sprint) {
+        advanceZoom();
+      } else if (!move && age > ({ peek: 1.43, curious: 1.29, braking: 1.95 }[state] ?? .65)) {
+        if (sprint && state === "peek" && peeksLeft > 0) approachCorner();
+        else if (sprint) play();
+        else returnHome();
+      }
+    } else if (state === "returning") {
+      if (sprint) play();
+      else if (arrived) enter(time - lastKey < .82 ? "alert" : "settling");
+    } else if (state === "settling" && age > .80) {
+      enter("sleeping");
+    }
+  }
+
+  function draw(dt) {
+    const age = time - entered;
+    const reduced = motion.matches;
+    const atRest = state === "sleeping" || state === "settling";
+    const peeking = state === "peek";
+    const cornerFace = peeking ? corner.expression : "";
+    const speed = Math.hypot(vx * width, vy);
+    const pace = reduced ? 0 : clamp(speed / 475);
+    const speedSign = Math.sign(vx);
+    const crouch = state === "waking" ? pulse(age / .43) : 0;
+    const leap = state === "pounce" ? pulse((age - .10) / .51) : 0;
+    const landing = state === "pounce" ? pulse((age - .54) / .18) : 0;
+    const bounces = state === "wiggle" ? .74 * pulse((age - .08) / .27) + .6 * pulse((age - .43) / .31) : 0;
+    const inspect = state === "curious" ? Math.sin((age - .1) * 5.5) * pulse(age / 1.31) : 0;
+    const gasp = (state === "braking" || cornerFace === "shocked" || (reduced && warned && time - lastSpeech < 1.25)) && !atRest;
+    const restingBreath = reduced ? 0 : Math.sin(time * 1.66) * .015;
+    const twitch = reduced ? 0 : pulse((time - lastKey) / .18) * .045;
+    const blinkPhase = (time + .25) % 3.9;
+    const blink = !reduced && !atRest && blinkPhase < .13 ? pulse(blinkPhase / .13) : 0;
+    const delighted = cornerFace === "excited"
+      ? ease(clamp((age - .33) / .24)) * (1 - ease(clamp((age - 1.07) / .29)))
+      : 0;
+    const zoomJoy = state === "zip" && zoomLeg === 1
+      ? ease(clamp((age - .08) / .24)) * (1 - ease(clamp((age - .56) / .25)))
+      : 0;
+    const smile = reduced ? 0 : Math.max(state === "pounce" ? pulse((age - .13) / .57) : 0, bounces, delighted, zoomJoy);
+    const stare = peeking ? -corner.side * 9 : inspect * 9 + speedSign * pace * 9;
+
+    gaze = follow(gaze, reduced ? 0 : stare, 11, dt);
+    glanceY = follow(glanceY, peeking ? (corner.upper ? 5 : -7) : 0, 10, dt);
+    const peekTilt = -corner.side * (10 + Math.sin(age * 8) * 3);
+    const tilt = peeking ? peekTilt : speedSign * 13 * pace + inspect * 14 + bounces * 7 * Math.sin(age * 22);
+    lean = follow(lean, reduced ? 0 : tilt, 11, dt);
+    eye = follow(eye, state === "sleeping" ? 0 : atRest ? .55 * (1 - ease(clamp(age / .5))) : 1, 19, dt);
+    grin = follow(grin, smile, 17, dt);
+    surprised = follow(surprised, gasp ? 1 : 0, 13, dt);
+    const wink = cornerFace === "wink" ? .9 * pulse((age - .36) / .57) : 0;
+    squint = follow(squint, peeking ? -corner.side * (cornerFace === "curious" ? .47 : wink) : inspect * .48, 14, dt);
+    squeeze = follow(squeeze, reduced ? .94 : atRest ? .94 : 1 - crouch * .12 + leap * .085 - landing * .13 - Math.abs(inspect) * .08 + bounces * .065, 12, dt);
+    gait += dt * pace * 28;
+    const hop = Math.abs(Math.sin(gait)) * pace * (peeking ? 2 : 15);
+    lift = follow(lift, reduced ? 0 : hop + leap * 41 + bounces * 35, 24, dt);
+    snooze = follow(snooze, state === "sleeping" ? 1 : 0, 6, dt);
+
+    const stageDepth = clamp(.94 + (y - 245) * .0013, .69, 1.09);
+    const zoomTarget = state === "zip" ? [.57, 1.59, 1][zoomLeg] : peeking ? (corner.upper ? 1.36 : 1.12) : 1;
+    zoom = follow(zoom, reduced ? 1 : zoomTarget, 6.8, dt);
+    const depth = stageDepth * zoom;
+    const scaleX = depth * (1 + (1 - squeeze) * .38 + pace * .036);
+    const scaleY = depth * (squeeze + restingBreath * (atRest ? 1 : .35) + twitch);
+    const cx = x * width;
+    cat.setAttribute("transform", "translate(" + cx + " " + (y - lift) + ") rotate(" + lean + ") scale(" + scaleX + " " + scaleY + ")");
+    shadow.setAttribute("cx", cx);
+    shadow.setAttribute("cy", y + 1);
+    shadow.setAttribute("rx", (63 - lift * .42) * depth);
+    shadow.setAttribute("opacity", .23 - lift * .003);
+    face.setAttribute("transform", "translate(" + gaze + " " + glanceY + ")");
+    const openness = eye * (1 - blink * .99);
+    const eyeHeight = .18 + openness * .82;
+    open.setAttribute("transform", "translate(0 59) scale(1 " + eyeHeight + ") translate(0 -59)");
+    leftEye.setAttribute("transform", "translate(0 59) scale(1 " + (1 - Math.max(0, squint)) + ") translate(0 -59)");
+    rightEye.setAttribute("transform", "translate(0 58) scale(1 " + (1 + Math.min(0, squint)) + ") translate(0 -58)");
+    open.setAttribute("opacity", openness * (1 - grin) * (1 - surprised));
+    closed.setAttribute("opacity", (1 - openness) * (1 - grin) * (1 - surprised));
+    happy.setAttribute("opacity", grin);
+    shocked.setAttribute("opacity", surprised * (1 - grin));
+
+    if (time <= speechUntil && bubbleHalf) {
+      const target = cx * sceneScale;
+      const above = (y - lift - 133 * scaleY) * sceneScale;
+      const beside = above < bubbleHeight + 7 && (x < .26 || x > .74);
+      const inward = x < .5 ? 1 : -1;
+      const bubbleTarget = beside ? target + inward * (depth * 66 * sceneScale + bubbleHalf + 7) : target;
+      const left = clamp(bubbleTarget, bubbleHalf + 8, width * sceneScale - bubbleHalf - 8);
+      const top = beside
+        ? Math.max(bubbleHeight + 8, (y - lift - 52 * scaleY) * sceneScale + bubbleHeight / 2)
+        : Math.max(bubbleHeight + 7, above);
+      bubble.style.left = left + "px";
+      bubble.style.top = top + "px";
+      bubble.style.setProperty("--tail", clamp(bubbleHalf + target - left, 12, 2 * bubbleHalf - 12) + "px");
+      bubble.dataset.tail = beside ? (inward > 0 ? "left" : "right") : "bottom";
+      const faceY = y - lift - 59 * scaleY;
+      bubble.toggleAttribute("data-offstage", faceY < -11 || faceY > 313);
+    }
+
+    marks.forEach((mark, index) => {
+      const phase = reduced ? (index + 1) / 4 : (time / 3.05 + index / 3 + .12) % 1;
+      const opacity = reduced ? .8 : ease(clamp(phase * 6)) * (1 - ease(clamp((phase - .64) / .36)));
+      const scale = .75 + phase * .65;
+      mark.setAttribute("transform", "translate(" + (width / 2 + 43 + 47 * phase) + " " + (143 - 56 * phase) + ") scale(" + scale + ")");
+      mark.setAttribute("opacity", opacity * snooze);
+    });
+  }
+
+  function frame(stamp) {
+    const dt = clamp((stamp - (previousFrame || stamp - 16)) / 1000, .001, .05);
+    previousFrame = stamp;
+    time += dt;
+    update(dt);
+    draw(dt);
+    request = requestAnimationFrame(frame);
+  }
+
+  function type() {
+    const now = performance.now();
+    if (now - lastInput < 35) return;
+    lastInput = now;
+    if (time - lastKey > 1.2) warned = false;
+    lastKey = time;
+    recentKeys.push(time);
+    if (recentKeys.length > 9) recentKeys.shift();
+    energy = clamp(energy + .76, 0, 3.2);
+    if (state === "sleeping" || state === "settling") enter("waking");
+  }
+
+  let repeated = false;
+  document.addEventListener("keydown", (event) => {
+    if (event.target === field) repeated = event.repeat;
+    if (event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.key.length === 1 || event.key === "Backspace" || event.key === "Enter") {
+      if (event.target !== field && event.key.length === 1) field.focus({ preventScroll: true });
+      type();
+    }
+  });
+  field.addEventListener("keyup", () => { repeated = false; });
+  field.addEventListener("blur", () => { repeated = false; });
+  field.addEventListener("input", (event) => {
+    if (!repeated && /^(insertText|insertCompositionText|insertReplacementText|deleteContent)/.test(event.inputType)) type();
+  });
+  scene.addEventListener("click", () => field.focus({ preventScroll: true }));
+
+  motion.addEventListener("change", () => {
+    if (!motion.matches) return;
+    move = null;
+    x = .5;
+    y = 245;
+    vx = vy = lift = lean = gaze = glanceY = 0;
+    squeeze = .94;
+    grin = 0;
+    zoom = 1;
+    if (state !== "sleeping") enter("alert");
+    draw(0);
+  });
+
+  function size() {
+    const bounds = scene.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    width = 304 * bounds.width / bounds.height;
+    sceneScale = bounds.height / 304;
+    bubbleHalf = bubble.offsetWidth / 2;
+    bubbleHeight = bubble.offsetHeight;
+    scene.setAttribute("viewBox", "0 0 " + width + " 304");
+    pillow.setAttribute("transform", "translate(" + width / 2 + " 244)");
+    draw(0);
+  }
+
+  size();
+  new ResizeObserver(size).observe(scene);
+  request = requestAnimationFrame(frame);
+  document.addEventListener("visibilitychange", () => {
+    cancelAnimationFrame(request);
+    if (!document.hidden) {
+      previousFrame = energy = 0;
+      lastKey = -Infinity;
+      recentKeys.length = 0;
+      request = requestAnimationFrame(frame);
+    }
+  });
+})();
+</script>
+</main>
+</body>
+</html>

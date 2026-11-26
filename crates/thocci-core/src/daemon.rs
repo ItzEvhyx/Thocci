@@ -3,8 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
-use std::thread;
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::audio::{apply_low_latency_env, AudioEngine};
@@ -32,9 +31,17 @@ struct SharedState {
     pack_id: Mutex<String>,
     volume_percent: AtomicU8,
     stop: AtomicBool,
+    stop_lock: Mutex<()>,
+    stop_signal: Condvar,
 }
 
 impl SharedState {
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        let _guard = self.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.stop_signal.notify_all();
+    }
+
     fn handle_command(&self, raw: &str) -> String {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
@@ -57,7 +64,7 @@ impl SharedState {
             "volume" => self.cmd_volume(parts.next()),
             "pack" => self.cmd_pack(parts.next()),
             "stop" => {
-                self.stop.store(true, Ordering::Release);
+                self.request_stop();
                 "OK stopping".to_owned()
             }
             other => format!("ERR unknown:{other}"),
@@ -163,6 +170,8 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
         pack_id: Mutex::new(pack_id),
         volume_percent: AtomicU8::new(volume_percent),
         stop: AtomicBool::new(false),
+        stop_lock: Mutex::new(()),
+        stop_signal: Condvar::new(),
     });
 
     install_signal_handler(Arc::clone(&state));
@@ -174,14 +183,25 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
     let ctrl_state = Arc::clone(&state);
     let mut control = ControlServer::start(Arc::new(move |cmd| ctrl_state.handle_command(cmd)))?;
 
+    let check_interval = Duration::from_secs(2);
     let mut last_device_check = Instant::now();
+    let mut stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
     while !state.stop.load(Ordering::Acquire) {
-        thread::sleep(Duration::from_millis(100));
-        if last_device_check.elapsed() >= Duration::from_secs(2) {
+        let remaining = check_interval.saturating_sub(last_device_check.elapsed());
+        if remaining.is_zero() {
+            drop(stop_guard);
             state.audio.check_device_change();
             last_device_check = Instant::now();
+            stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
+            continue;
         }
+        let (next_guard, _) = state
+            .stop_signal
+            .wait_timeout(stop_guard, remaining)
+            .unwrap_or_else(|e| e.into_inner());
+        stop_guard = next_guard;
     }
+    drop(stop_guard);
 
     listener.stop();
     control.stop();
@@ -206,7 +226,7 @@ fn load_initial_pack(
 fn install_signal_handler(state: Arc<SharedState>) {
     let _ = ctrlc::set_handler(move || {
         log::info!("Received termination signal, shutting down");
-        state.stop.store(true, Ordering::Release);
+        state.request_stop();
     });
 }
 

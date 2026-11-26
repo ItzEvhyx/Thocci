@@ -1,63 +1,123 @@
-# ![Thocci — mascot perched on a black titanium Escape key](assets/readme/thocci-banner.webp)
+# ![Thocci beside a titanium Escape key and an exploded mechanical switch](assets/readme/thocci-hero-monochrome.webp)
 
 <p align="center">
-  <strong>Mechanical keyboard sounds for Windows, Linux, and macOS — desktop app and CLI powered by one Rust engine.</strong>
+  <strong>Give your keyboard a sound of its own.</strong><br>
+  Mechanical key sounds for Windows, macOS, and Linux.
 </p>
 
 <p align="center">
-  <a href="#installation">Install</a> ·
   <a href="#desktop-app">Desktop app</a> ·
-  <a href="#terminal-guide">Terminal guide</a> ·
+  <a href="#installation">Install</a> ·
   <a href="#permissions">Permissions</a> ·
-  <a href="#privacy">Privacy</a>
+  <a href="#terminal-guide">Terminal guide</a>
 </p>
 
-Thocci gives your physical keyboard a custom mechanical sound. Choose from 20 built-in soundpacks — from Cherry MX Black and soft Creamy taps to a classic typewriter — or import any local `.wav` clip as your own reusable soundpack. Switch packs or adjust volume live from the desktop dashboard, menu-bar/tray Quick Actions, or the `thocci` CLI. All interfaces share the exact same background engine, active soundpack, and volume setting.
+Soft linear taps, crisp clicks, or a classic typewriter. Pick from 20 built-in soundpacks or import a WAV of your own. Your soundpack and volume stay in sync across the desktop app, tray, and terminal.
+
+## Desktop app
+
+### Play every key
+
+![Thocci's dark Home dashboard with playback controls, the mascot, and an on-screen keyboard](assets/readme/thocci-dashboard-dark.png)
+
+Adjust volume, type or click any key to audition the active soundpack, and try a 20-second typing challenge.
+
+<details>
+<summary>See Home in light mode</summary>
+
+![Thocci's light Home dashboard with the same playback, mascot, and keyboard controls](assets/readme/thocci-dashboard-light.png)
+
+</details>
+
+### Find your sound
+
+![Thocci's light dashboard with the Soundpacks browser open and AULA F75 Max selected](assets/readme/thocci-soundpacks-light.png)
+
+Search the built-in library and switch packs live. Try the Reaper switches from the AULA F75 Max, the softer Creamy pack, or your own WAV.
+
+### Quick Actions
+
+<p align="center">
+  <img src="assets/readme/thocci-quick-actions.png" width="288" alt="Thocci's Quick Actions panel with a playback key, a Settings key, and the SWITCHES shortcut">
+</p>
+
+Toggle playback from the tray or menu bar, open Settings, or jump straight to Soundpacks with **SWITCHES**. On Linux, open Quick Actions from the tray menu or from the dashboard on desktops without a tray host.
 
 ## Installation
 
-The installers download the prebuilt CLI and matching desktop app bundle from [GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases). In a graphical session, the installer launches Thocci directly into the first-launch welcome flow. For headless or CLI-only environments, pass `--cli-only` (Linux/macOS) or `-CliOnly` (Windows) — or set `THOCCI_CLI_ONLY=1` — to install only the CLI and display the terminal welcome.
+[GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases) is where prebuilt downloads will appear. To run Thocci before a release is available for your platform, build it from source.
 
-### Windows
+### Run from source
 
-Open PowerShell on Windows (x64) and run:
+Install Git, [stable Rust](https://rustup.rs/), and [Node.js 22](https://nodejs.org/). Then set up your platform's native dependencies.
 
-```powershell
-Invoke-RestMethod https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.ps1 | Invoke-Expression
+| Platform | Prerequisites |
+| --- | --- |
+| Windows | Visual Studio Build Tools with **Desktop development with C++**, the MSVC Rust toolchain, and Microsoft Edge WebView2. |
+| macOS | Xcode Command Line Tools. Run `xcode-select --install` if needed. |
+| Linux | WebKitGTK 4.1, GTK 3, ALSA, and the other desktop build dependencies below. |
+
+See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform setup and package names on other Linux distributions. On Ubuntu or Debian, install the dependencies used by Thocci's build.
+
+```bash
+sudo apt update
+sudo apt install build-essential curl libasound2-dev libwebkit2gtk-4.1-dev \
+  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 ```
 
-The installer places `thocci.exe` and `thocci-app.exe` in `%USERPROFILE%\.local\bin`, adds that folder to your user `PATH`, creates a **Thocci** Start Menu shortcut, and opens the desktop app. Open a new PowerShell window if `thocci` is unavailable in the current one.
+On any of the three platforms, clone the repository and launch the desktop app.
 
-### Linux and macOS
+```sh
+git clone https://github.com/ItzEvhyx/Thocci.git
+cd Thocci
+npm ci
+npm run dev
+```
 
-Run these commands in your terminal. Supported targets: Linux x64 & ARM64 (glibc) and macOS Intel & Apple silicon.
+Use `npm run build` to create local desktop bundles under `target/release/bundle/`. For a CLI-only build, run `cargo install --path crates/thocci-cli --locked` from the repository root.
+
+### Install from a release
+
+Use the steps below once [Releases](https://github.com/ItzEvhyx/Thocci/releases) contains a build for your platform. The scripts install both the desktop app and CLI. For CLI-only installs, pass `-CliOnly` on Windows or `--cli-only` on macOS and Linux.
+
+#### Windows · x64
+
+Open PowerShell and run the installer.
+
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.ps1 -OutFile .\install-thocci.ps1
+.\install-thocci.ps1
+```
+
+The installer puts the binaries in `%USERPROFILE%\.local\bin`, adds that folder to your user `PATH`, and creates a **Thocci** Start menu shortcut. Open a new PowerShell window if the `thocci` command is missing.
+
+#### macOS · Apple silicon and Intel
 
 ```bash
 curl -fsSLo thocci-install.sh https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.sh &&
   bash ./thocci-install.sh
 ```
 
-- **macOS** installs the `thocci` CLI to `~/.local/bin/thocci` and `Thocci.app` to `/Applications` (or `~/Applications`), then opens Thocci.
-- **Linux** installs `thocci` and `thocci-app` to `~/.local/bin`, registers the official ESC icon and desktop launcher (`~/.local/share/applications/thocci.desktop`), and launches Thocci when `DISPLAY` or `WAYLAND_DISPLAY` is active.
+Open **Thocci** from Applications. The installer uses `~/Applications` if the system Applications folder is unwritable and places the CLI in `~/.local/bin`. Follow the [Input Monitoring setup](#permissions) for system-wide sound.
 
-## Desktop app
+#### Linux · x64 and ARM64 on glibc
 
-- **First launch:** Opens the welcome screen once; clicking **Get started** transitions into the dashboard and enables Quick Actions when supported by your desktop environment.
-- **Dashboard:** Light and charcoal dark themes, playback toggle, 0–100% volume slider, live Soundpacks sidebar with search, local `.wav` import, animated **Thocci** mascot stage, and an interactive 79-key Portuguese ISO keyboard preview.
-- **Quick Actions:** Compact menu-bar / system-tray popover with Thocci's pointer-following eyes, playback toggle keycap, Settings gear, and the `S W I T C H E S` shortcut straight into Soundpacks.
-- **Linux X11 & Wayland fallbacks:** Because AppIndicator does not emit tray icon-click events on Linux, the tray menu exposes **Quick Actions**, **Enable/Disable Thocci**, **Open Dashboard**, **Browse Soundpacks**, and **Quit Thocci**. Desktops without a tray host can launch Thocci from the application menu and access Quick Actions and Quit directly from the dashboard.
+```bash
+curl -fsSLo thocci-install.sh https://raw.githubusercontent.com/ItzEvhyx/Thocci/main/install.sh &&
+  bash ./thocci-install.sh
+```
+
+Open **Thocci** from your application launcher. The installer puts both binaries in `~/.local/bin` and adds a desktop entry. Add that directory to your shell's `PATH` if you plan to use the CLI. System-wide sound uses the [input group setup](#permissions) on X11 and Wayland.
 
 ## Permissions
 
-- **macOS:** Open **System Settings → Privacy & Security → Input Monitoring** and allow Thocci (the capture binary shown in the in-app **Setup guide**). Return to Thocci and toggle playback, relaunching if macOS prompts.
-- **Linux:** Keyboard capture uses `/dev/input/event*` (`evdev`) on both X11 and Wayland. Run `sudo usermod -aG input "$USER"`, then log out and sign back in.
-- **Windows:** Uses the interactive-session keyboard hook with no extra setup. Elevate Thocci if you want sounds inside Administrator windows.
+- **Windows** uses the interactive-session keyboard hook. Thocci generally needs to run at the same privilege level as the apps you type in.
+- **macOS** uses **System Settings → Privacy & Security → Input Monitoring**. Allow the capture binary shown in Thocci's **Setup guide**, then toggle playback or relaunch if prompted.
+- **Linux** uses `/dev/input/event*` for keyboard capture. Run `sudo usermod -aG input "$USER"`, then sign out and back in.
 
-Even while background permissions are pending or playback is off, the dashboard, soundpack browser, and pointer/touch key auditions remain available.
+You can browse soundpacks and click the on-screen keys while setting up system-wide playback.
 
 ## Terminal guide
-
-Start Thocci and type a few keys. Switch to Creamy and set volume to 40%:
 
 ```bash
 thocci on
@@ -68,22 +128,18 @@ thocci volume 40
 | Command | What it does |
 | --- | --- |
 | `thocci on` / `thocci off` | Start or stop keyboard sounds. |
-| `thocci toggle` | Turn sounds on or off with one command. |
-| `thocci packs` | Browse the 20 built-in soundpacks and any imported WAV packs. |
-| `thocci pack "Wooden Keyboard"` | Switch by pack ID, display name, or unique partial match (`thocci creamy` is the short form). |
+| `thocci toggle` | Switch playback on or off. |
+| `thocci packs` | List the built-in soundpacks and imported WAV packs. |
+| `thocci pack "Wooden Keyboard"` | Select a pack by ID, name, or unique partial match. |
 | `thocci volume 40` | Set the volume from 0 to 100. |
 | `thocci on --pack "./my-pack"` | Start with a custom soundpack folder. |
-| `thocci guide` / `thocci --help` | Open the built-in terminal guide. |
+| `thocci guide` / `thocci --help` | Open the terminal guide or command help. |
 | `thocci --plain guide` | Open the guide without ANSI colors. |
 
 ## Privacy
 
-**Thocci has no data collection or telemetry.** While sounds are enabled, it listens for physical key presses and releases solely to play the corresponding sounds locally on your device. Local WAV imports stay on your device. Thocci never logs, stores, or transmits what you type.
+Playback and WAV imports stay on your device. Thocci listens for physical key events while playback is enabled and uses them to play local sounds. It does not collect telemetry, log your keystrokes, or transmit what you type.
 
-## Meet Thocci
+## License
 
-Thocci is the app's black, cat-eared mascot. His favorite spot is the spacebar.
-
-![Thocci perched, peeking, bouncing, pressing, stretching, and napping on black titanium keycaps](assets/readme/ink-character-sheet.webp)
-
-Thocci is open source under the [MIT License](LICENSE).
+[MIT License](LICENSE)

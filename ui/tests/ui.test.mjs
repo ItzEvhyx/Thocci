@@ -5,7 +5,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { KeyHoldTracker } from "../src/keyboard.js";
-import { filterCatalog } from "../src/dashboard.js";
+import {
+  filterCatalog,
+  isPointerBlurControl,
+  isTextEditableElement,
+} from "../src/dashboard.js";
+import {
+  STAGE_CORNERS,
+  STAGE_GAMES,
+  STAGE_PHRASES,
+  createMascotController,
+} from "../src/stage.js";
 import {
   TRIVIA_PROMPTS,
   TYPING_DURATION_SECONDS,
@@ -169,4 +179,149 @@ test("typing challenge has 20 trivia prompts (2 per category), 20s cap, and accu
   });
   assert.equal(metrics.wpm, 90);
   assert.equal(metrics.accuracy, 90);
+});
+
+test("mascot pillow asset exists and controller sleeps by default, wakes on key, and cycles all four corners + zoom", () => {
+  const pillowSrc = path.join(root, "assets", "desktop", "mascot", "thocci-pillow.svg");
+  assert.ok(fs.existsSync(pillowSrc), "thocci-pillow.svg must exist in assets/desktop/mascot/");
+
+  // Deterministic RNG so bag shuffle is reproducible
+  let seed = 0.25;
+  const ctrl = createMascotController({
+    inputDebounceMs: 0,
+    random: () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    },
+  });
+
+  // Default sleeping pose at center baseline y=245
+  const initial = ctrl.computePose(0);
+  assert.equal(initial.state, "sleeping");
+  assert.equal(initial.x, 0.5);
+  assert.equal(initial.y, 245);
+  assert.equal(initial.closedOpacity, 1);
+
+  // Single key wakes Ink promptly and speaks first waking phrase
+  ctrl.triggerKeystroke(100);
+  const awake = ctrl.step(0.05);
+  assert.equal(awake.state, "waking");
+  assert.equal(awake.speechText, STAGE_PHRASES.waking[0]);
+
+  // Sustained steady typing (~5 cps, well below 9-in-960ms fast burst threshold)
+  const visitedCorners = new Set();
+  let sawRecede = false;
+  let sawRush = false;
+  let lastGameSeq = [];
+  let prevGame = "";
+
+  for (let i = 0; i < 950; i++) {
+    if (i % 7 === 0) {
+      ctrl.triggerKeystroke(200 + i * 32);
+    }
+    const pose = ctrl.step(0.032);
+    const snap = ctrl.getState();
+    if (pose.cornerName) visitedCorners.add(pose.cornerName);
+    if (pose.state === "zip" && pose.zoom < 0.72) sawRecede = true;
+    if (pose.state === "zip" && pose.zoom > 1.38) sawRush = true;
+    if (snap.lastGame && snap.lastGame !== prevGame) {
+      lastGameSeq.push(snap.lastGame);
+      prevGame = snap.lastGame;
+    }
+  }
+
+  // First seeded round must start with peek then zip
+  assert.equal(lastGameSeq[0], "peek");
+  assert.equal(lastGameSeq[1], "zip");
+  // No back-to-back repeats across bag boundaries
+  for (let i = 1; i < lastGameSeq.length; i++) {
+    assert.notEqual(lastGameSeq[i], lastGameSeq[i - 1]);
+  }
+  assert.equal(visitedCorners.size, STAGE_CORNERS.length);
+  assert.ok(sawRecede, "depth zoom should recede toward ~0.5x");
+  assert.ok(sawRush, "depth zoom should rush toward ~1.6x");
+  assert.equal(STAGE_GAMES.length, 5);
+
+  // Stopping input slows Ink down and returns smoothly to sleeping on pillow
+  for (let i = 0; i < 220; i++) {
+    ctrl.step(0.04);
+  }
+  const settled = ctrl.getState();
+  assert.equal(settled.state, "sleeping");
+  assert.ok(Math.abs(settled.x - 0.5) < 0.01);
+  assert.ok(Math.abs(settled.y - 245) < 1);
+});
+
+test("mascot controller detects fast bursts, interrupts chatter, respects Animate Thocci off, reduced motion, and suspension", () => {
+  const ctrl = createMascotController({ inputDebounceMs: 0 });
+  ctrl.triggerKeystroke(100);
+  // Advance past waking so fast-burst detection is active
+  for (let i = 0; i < 25; i++) ctrl.step(0.03);
+  assert.equal(ctrl.getState().state, "alert");
+
+  // 9 rapid presses within < 960 ms should trigger braking + first warning phrase
+  for (let i = 0; i < 9; i++) {
+    ctrl.triggerKeystroke(1000 + i * 50);
+    ctrl.step(0.05);
+  }
+  const braking = ctrl.getState();
+  assert.equal(braking.state, "braking");
+  assert.equal(braking.speechText, "Hey slow down a bit!");
+
+  // Pause > 1.2s and trigger a second fast burst -> rotates to second warning phrase
+  for (let i = 0; i < 80; i++) ctrl.step(0.04);
+  ctrl.triggerKeystroke(6000);
+  for (let i = 0; i < 20; i++) ctrl.step(0.03);
+  for (let i = 0; i < 9; i++) {
+    ctrl.triggerKeystroke(7000 + i * 50);
+    ctrl.step(0.05);
+  }
+  assert.equal(ctrl.getState().speechText, STAGE_PHRASES.braking[1]);
+
+  // Animate Thocci off -> static sleeping pose, stops reactions & bubbles, idempotent
+  assert.equal(ctrl.setAnimated(false), true);
+  assert.equal(ctrl.setAnimated(false), false);
+  const offSnap = ctrl.getState();
+  assert.equal(offSnap.state, "sleeping");
+  assert.equal(offSnap.speaking, false);
+  assert.equal(ctrl.triggerKeystroke(9000), false);
+
+  // Re-enable Animate Thocci + enable reduced motion -> stays on pillow with speech/expressions
+  assert.equal(ctrl.setAnimated(true), true);
+  assert.equal(ctrl.setReducedMotion(true), true);
+  ctrl.triggerKeystroke(10000);
+  const rmPose = ctrl.step(0.04);
+  assert.equal(rmPose.state, "waking");
+  assert.equal(rmPose.x, 0.5);
+  assert.equal(rmPose.y, 245);
+  assert.equal(rmPose.zoom, 1);
+  assert.equal(rmPose.lift, 0);
+
+  // Suspend (e.g. Typing Challenge) clears speech & ignores keystrokes, idempotent
+  assert.equal(ctrl.setSuspended(true), true);
+  assert.equal(ctrl.setSuspended(true), false);
+  assert.equal(ctrl.getState().speaking, false);
+  assert.equal(ctrl.triggerKeystroke(11000), false);
+  assert.equal(ctrl.setSuspended(false), true);
+});
+
+test("pointer focus predicates release buttons/switches/sliders while preserving text inputs", () => {
+  const mkEl = (tagName, attrs = {}) => ({
+    tagName,
+    type: attrs.type || "",
+    isContentEditable: Boolean(attrs.contentEditable),
+    getAttribute: (k) => attrs[k] ?? null,
+  });
+
+  assert.equal(isPointerBlurControl(mkEl("BUTTON")), true);
+  assert.equal(isPointerBlurControl(mkEl("INPUT", { type: "range" })), true);
+  assert.equal(isPointerBlurControl(mkEl("DIV", { role: "switch" })), true);
+  assert.equal(isPointerBlurControl(mkEl("INPUT", { type: "search" })), false);
+  assert.equal(isPointerBlurControl(mkEl("INPUT", { type: "number" })), false);
+
+  assert.equal(isTextEditableElement(mkEl("INPUT", { type: "search" })), true);
+  assert.equal(isTextEditableElement(mkEl("INPUT", { type: "number" })), true);
+  assert.equal(isTextEditableElement(mkEl("TEXTAREA")), true);
+  assert.equal(isTextEditableElement(mkEl("INPUT", { type: "range" })), false);
+  assert.equal(isTextEditableElement(mkEl("BUTTON")), false);
 });

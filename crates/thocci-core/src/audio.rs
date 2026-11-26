@@ -69,6 +69,8 @@ struct Voice {
 
 struct MixerShared {
     voices: Mutex<Vec<Voice>>,
+    /// Lock-free fast-path flag so silent real-time callbacks avoid mutex & clock calls.
+    has_voices: AtomicBool,
     /// Volume as `f32::to_bits()`, clamped to `[0.0, 1.0]`.
     volume_bits: AtomicU32,
     needs_reopen: AtomicBool,
@@ -82,6 +84,7 @@ impl MixerShared {
     fn new(volume: f32) -> Self {
         Self {
             voices: Mutex::new(Vec::with_capacity(MAX_VOICES)),
+            has_voices: AtomicBool::new(false),
             volume_bits: AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()),
             needs_reopen: AtomicBool::new(false),
             callback_ticks: AtomicU64::new(0),
@@ -116,11 +119,13 @@ impl MixerShared {
             let excess = voices.len() - MAX_VOICES;
             voices.drain(0..excess);
         }
+        self.has_voices.store(true, Ordering::Release);
     }
 
     fn clear(&self) {
         let mut voices = self.voices.lock().unwrap_or_else(|e| e.into_inner());
         voices.clear();
+        self.has_voices.store(false, Ordering::Release);
     }
 
     /// Fill `output` (`channels` interleaved samples per frame) with mixed voices.
@@ -132,6 +137,13 @@ impl MixerShared {
         self.xrun_streak.store(0, Ordering::Relaxed);
 
         let zero = T::from_sample(0.0);
+
+        // Lock-free idle fast-path: skip mutex, clock read, and retain when silent.
+        if !self.has_voices.load(Ordering::Acquire) {
+            output.fill(zero);
+            return;
+        }
+
         let volume = self.volume();
 
         // Try-lock so the real-time callback never stalls behind the input thread.
@@ -153,6 +165,9 @@ impl MixerShared {
                 // Still advance voices when muted so unmuting does not replay old presses.
                 let frames = output.len() / channels.max(1);
                 advance_silently(&mut voices, frames);
+            }
+            if voices.is_empty() {
+                self.has_voices.store(false, Ordering::Release);
             }
             output.fill(zero);
             return;
@@ -177,6 +192,9 @@ impl MixerShared {
         }
 
         voices.retain(|voice| voice.cursor + 1 < voice.samples.len());
+        if voices.is_empty() {
+            self.has_voices.store(false, Ordering::Release);
+        }
     }
 }
 

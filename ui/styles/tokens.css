@@ -13,10 +13,20 @@
   --divider: #DDE2EC;
   --bg-raised: #FFFFFF;
   --bg-raised-hover: #F7F9FD;
-  --stage-top: #F1F4FC;
-  --stage-bottom: #DDE4F4;
+  --stage-top: #ECEEF3;
+  --stage-bottom: #D5D8E0;
   --stage-orbit: #8196CD;
-  --stage-floor: #F1F4FC;
+  --stage-floor: #ECEEF3;
+  --stage-pillow-light: #F8F8FA;
+  --stage-pillow-dark: #E3E3E7;
+  --stage-pillow-edge: #ADADB5;
+  --stage-pillow-stitch: #B9B9C0;
+  --stage-cat-rim: #17181B;
+  --stage-sleep-ink: #393943;
+  --stage-bubble-bg: #FFFFFF;
+  --stage-bubble-border: #D5D5DA;
+  --stage-bubble-text: #17181D;
+  --stage-bubble-shadow: 0 3px 12px rgba(16, 16, 20, 0.14);
 
   /* Keyboard tokens — Light mode (silver aluminum & white Magic Keyboard) */
   --kb-chassis-top: #D6D9DF;
@@ -90,10 +100,20 @@
   --divider: #313133;
   --bg-raised: #212122;
   --bg-raised-hover: #28282A;
-  --stage-top: #161617;
-  --stage-bottom: #353537;
+  --stage-top: #232325;
+  --stage-bottom: #333336;
   --stage-orbit: #89898B;
-  --stage-floor: #353537;
+  --stage-floor: #333336;
+  --stage-pillow-light: #D6D6D9;
+  --stage-pillow-dark: #A6A6AD;
+  --stage-pillow-edge: #8D8D94;
+  --stage-pillow-stitch: #8B8B92;
+  --stage-cat-rim: #4E4E54;
+  --stage-sleep-ink: #E3E3E8;
+  --stage-bubble-bg: #262628;
+  --stage-bubble-border: #3E3E42;
+  --stage-bubble-text: #F5F5F5;
+  --stage-bubble-shadow: 0 4px 14px rgba(0, 0, 0, 0.36);
 
   /* Space Black MacBook keyboard skin in dark mode (with top & bottom keycap rim highlights) */
   --kb-chassis-top: #1A1A1D;

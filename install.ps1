@@ -62,6 +62,7 @@ function Create-StartMenuShortcut {
             $Shortcut = $Shell.CreateShortcut($ShortcutPath)
             $Shortcut.TargetPath = $TargetExe
             $Shortcut.WorkingDirectory = Split-Path -Parent $TargetExe
+            $Shortcut.IconLocation = "$TargetExe,0"
             $Shortcut.Description = "Thocci - Mechanical keyboard sounds"
             $Shortcut.Save()
         }

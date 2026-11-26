@@ -9,6 +9,8 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -111,16 +113,36 @@ impl Drop for ControlServer {
     }
 }
 
+fn wait_for_listener_ready(listener: &TcpListener) {
+    #[cfg(unix)]
+    {
+        let mut pfd = libc::pollfd {
+            fd: listener.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // Block in the kernel with zero CPU usage until a client connects, waking
+        // only 4x/sec to observe `stop` during shutdown.
+        // SAFETY: `pfd` is a valid stack-allocated `pollfd` for the duration of the call.
+        let _ = unsafe { libc::poll(&mut pfd, 1, 250) };
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = listener;
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn serve_loop(listener: TcpListener, handler: CommandHandler, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _)) => handle_connection(stream, &handler),
             Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::sleep(Duration::from_millis(25));
+                wait_for_listener_ready(&listener);
             }
             Err(err) => {
                 log::debug!("Control accept error: {err}");
-                thread::sleep(Duration::from_millis(50));
+                thread::sleep(Duration::from_millis(100));
             }
         }
     }
