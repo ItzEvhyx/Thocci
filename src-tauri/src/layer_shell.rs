@@ -48,6 +48,18 @@ pub fn is_active() -> bool {
     LAYER_SHELL_ACTIVE.load(Ordering::Acquire)
 }
 
+/// Silence the harmless upstream GLib deprecation warning emitted by
+/// `libayatana-appindicator` when Tauri's tray-icon crate initializes on Linux.
+pub fn silence_ayatana_deprecation_warning() {
+    glib::log_set_handler(
+        Some("libayatana-appindicator"),
+        glib::LogLevels::LEVEL_WARNING,
+        false,
+        false,
+        |_, _, _| {},
+    );
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayerKind {
     /// Exact-sized draggable & resizable overlay panel (Dashboard / Onboarding).

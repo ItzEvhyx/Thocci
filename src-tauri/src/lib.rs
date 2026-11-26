@@ -447,11 +447,11 @@ async fn set_overlay_rect(
         prefs::MIN_DASHBOARD_HEIGHT as i32,
         prefs::MAX_DASHBOARD_HEIGHT as i32,
     );
-    let clamped_x = x.clamp(-clamped_w + 120, 7680);
-    let clamped_y = y.clamp(0, 4320);
 
     #[cfg(target_os = "linux")]
     if layer_shell::is_active() {
+        let clamped_x = x.clamp(-clamped_w + 120, 7680);
+        let clamped_y = y.clamp(0, 4320);
         let _ = app.run_on_main_thread(move || {
             layer_shell::set_panel_rect(
                 "main",
@@ -465,6 +465,8 @@ async fn set_overlay_rect(
             );
         });
     }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (x, y);
 
     if persist_size.unwrap_or(false) {
         let saved = tauri::async_runtime::spawn_blocking(move || {
@@ -672,6 +674,9 @@ fn resolve_daemon_exe() -> std::io::Result<PathBuf> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    layer_shell::silence_ayatana_deprecation_warning();
+
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())

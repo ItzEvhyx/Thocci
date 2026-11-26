@@ -58,11 +58,13 @@ fn platform_pid_is_running(pid: u32) -> bool {
     // zombie/dead processes as not running so UI/CLI never report a dead daemon
     // as active.
     #[cfg(target_os = "linux")]
-    if is_linux_zombie(pid) {
-        return false;
+    {
+        !is_linux_zombie(pid)
     }
-
-    true
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
 }
 
 #[cfg(target_os = "linux")]
