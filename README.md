@@ -12,7 +12,7 @@
   <a href="#terminal-guide">Terminal guide</a>
 </p>
 
-Soft linear taps, crisp clicks, or a classic typewriter. Pick from 20 built-in soundpacks or import a WAV of your own. Your soundpack and volume stay in sync across the desktop app, tray, and terminal.
+Soft linear taps, crisp clicks, or a classic typewriter. Pick from 41 built-in soundpacks or import a WAV of your own. Your soundpack and volume stay in sync across the desktop app, tray, and terminal.
 
 ## Desktop app
 
@@ -45,9 +45,19 @@ Toggle playback from the tray or menu bar, open Settings, or jump straight to So
 
 ## Installation
 
-Prebuilt desktop and CLI binaries are published on [GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases) — no Rust, Node.js, or build tools are required.
+Prebuilt desktop installers and CLI binaries are published on [GitHub Releases](https://github.com/ItzEvhyx/Thocci/releases) — no Rust, Node.js, or build tools are required.
 
-### Install from a release
+### Download installer (recommended)
+
+Direct downloads always point to the latest release — ready to run without opening a terminal.
+
+| Platform | Direct download | Notes |
+| --- | --- | --- |
+| **Windows** (x64) | [**Thocci-Setup-x64.exe**](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-Setup-x64.exe) | Per-user installer (no admin prompt required). Adds a Start Menu shortcut and uninstaller. |
+| **macOS** (Apple Silicon & Intel) | [**Thocci-macOS.dmg**](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-macOS.dmg) | Universal `.dmg` (or download [Apple Silicon](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-macOS-AppleSilicon.dmg) / [Intel](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-macOS-Intel.dmg)). Drag **Thocci** to Applications. |
+| **Linux** (Debian / Ubuntu) | [**Thocci-Linux-x64.deb**](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-Linux-x64.deb) · [**Thocci-Linux-arm64.deb**](https://github.com/ItzEvhyx/Thocci/releases/latest/download/Thocci-Linux-arm64.deb) | Other distros (Arch, Fedora, NixOS, etc.) can use the one-line terminal installer below. |
+
+### Install via terminal (desktop app + CLI)
 
 The installers below download both the desktop app and the `thocci` CLI from the latest release and register Thocci in your OS app launcher. For CLI-only installs, pass `-CliOnly` on Windows or `--cli-only` on macOS and Linux.
 

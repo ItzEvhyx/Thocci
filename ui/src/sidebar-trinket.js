@@ -380,19 +380,18 @@ function buildTrinketSvgMarkup({ bodyPath, eyes }) {
     <svg class="sidebar-trinket-svg" viewBox="0 0 192 142" aria-hidden="true" focusable="false">
       <defs>
         <linearGradient id="trinket-cap-side" x1=".18" y1="0" x2=".44" y2="1">
-          <stop stop-color="#53545d"/>
-          <stop offset=".28" stop-color="#3b3c43"/>
-          <stop offset=".78" stop-color="#292a30"/>
-          <stop offset="1" stop-color="#18191f"/>
+          <stop stop-color="var(--trinket-cap-highlight)"/>
+          <stop offset=".28" stop-color="var(--trinket-cap-surface)"/>
+          <stop offset=".78" stop-color="var(--trinket-cap-side)"/>
+          <stop offset="1" stop-color="var(--trinket-cap-base)"/>
         </linearGradient>
         <radialGradient id="trinket-impact-halo">
           <stop stop-color="var(--kb-pressed-rim)" stop-opacity=".65"/>
           <stop offset="1" stop-color="var(--kb-pressed-rim)" stop-opacity="0"/>
         </radialGradient>
         <linearGradient id="trinket-deck-side" x2="0" y2="1">
-          <stop stop-color="#3c3d45"/>
-          <stop offset=".26" stop-color="#292a30"/>
-          <stop offset="1" stop-color="#1b1c21"/>
+          <stop stop-color="var(--kb-chassis-top)"/>
+          <stop offset="1" stop-color="var(--kb-chassis-bottom)"/>
         </linearGradient>
         <clipPath id="trinket-deck-clip" clipPathUnits="userSpaceOnUse">
           <rect x="-30" y="60" width="60" height="61"/>
@@ -400,17 +399,17 @@ function buildTrinketSvgMarkup({ bodyPath, eyes }) {
         <path id="trinket-cap-profile" d="M-17.8 88.5C-10.6 88.5-4.5 92.5 4 92.8C9.1 93 13.7 92.1 17.2 91Q20.5 89.9 21.4 93.5L27.3 113.9Q28.3 117.8 24.6 117.8H-24.7Q-28.2 117.8-27.4 114L-22.2 93.3Q-21.1 88.5-17.8 88.5Z"/>
         <path id="trinket-cap-ridge" d="M-17.5 88.9C-10.6 89-4.4 92.9 4 93.2C9.1 93.4 13.7 92.4 17.3 91.4Q19.8 90.6 21 93.8" fill="none" stroke-linecap="round"/>
         <g id="trinket-cap-art">
-          <use href="#trinket-cap-profile" fill="url(#trinket-cap-side)" stroke="#50515b" stroke-width=".75"/>
-          <use href="#trinket-cap-ridge" stroke="#90929e" stroke-opacity=".78" stroke-width=".8"/>
-          <path d="M-21.6 95.7-26.1 114.1M-23.7 116.5H24" fill="none" stroke="#9396a3" stroke-opacity=".18" stroke-width=".75" stroke-linecap="round"/>
+          <use href="#trinket-cap-profile" fill="url(#trinket-cap-side)" stroke="var(--trinket-cap-edge)" stroke-opacity=".55" stroke-width=".75"/>
+          <use href="#trinket-cap-ridge" stroke="var(--trinket-cap-highlight)" stroke-opacity=".78" stroke-width=".8"/>
+          <path d="M-21.6 95.7-26.1 114.1M-23.7 116.5H24" fill="none" stroke="var(--trinket-cap-edge)" stroke-opacity=".18" stroke-width=".75" stroke-linecap="round"/>
         </g>
         <g id="trinket-lit-cap">
           <use href="#trinket-cap-profile" fill="var(--kb-pressed)" stroke="var(--kb-pressed-rim)" stroke-width=".75"/>
           <use href="#trinket-cap-ridge" stroke="var(--kb-pressed-rim)" stroke-width="1.1"/>
         </g>
       </defs>
-      <ellipse cx="96" cy="132" rx="89" ry="4" fill="#08080b" opacity=".56"/>
-      <path d="M5 120H187V125H5Z" fill="#0c0c0f"/>
+      <ellipse cx="96" cy="132" rx="89" ry="4" fill="var(--trinket-deck-shadow)"/>
+      <path d="M5 120H187V125H5Z" fill="var(--kb-key-well)"/>
       <ellipse data-trinket-glow cx="96" cy="121" rx="32" ry="8" fill="url(#trinket-impact-halo)" opacity="0"/>
       <g data-trinket-switch="34" transform="translate(34 0)" clip-path="url(#trinket-deck-clip)">
         <g data-trinket-key transform="translate(0 0)">
@@ -430,8 +429,8 @@ function buildTrinketSvgMarkup({ bodyPath, eyes }) {
           <use data-trinket-key-light href="#trinket-lit-cap" opacity="0"/>
         </g>
       </g>
-      <path d="M5 121H187V127Q187 131 183 131H9Q5 131 5 127Z" fill="url(#trinket-deck-side)" stroke="#303138" stroke-width=".7"/>
-      <path d="M8.5 121.5H183.5" stroke="#6c6e7b" stroke-opacity=".46" stroke-width=".85" stroke-linecap="round"/>
+      <path d="M5 121H187V127Q187 131 183 131H9Q5 131 5 127Z" fill="url(#trinket-deck-side)" stroke="var(--kb-chassis-rim)" stroke-width=".7"/>
+      <path d="M8.5 121.5H183.5" stroke="var(--kb-chassis-bevel)" stroke-width=".85" stroke-linecap="round"/>
       <g data-trinket-impact aria-hidden="true" opacity="0">
         <g data-trinket-hit-left fill="none" stroke="var(--kb-pressed-rim)" stroke-width="1.55" stroke-linecap="round">
           <path d="M-22-4l-5-3m4 1-2-5"/>
@@ -442,7 +441,7 @@ function buildTrinketSvgMarkup({ bodyPath, eyes }) {
           <circle cx="28" cy="-1" r=".8" fill="var(--kb-pressed-rim)" stroke="none"/>
         </g>
       </g>
-      <ellipse data-trinket-shadow cx="96" cy="93" rx="17" ry="3" fill="#111116" opacity=".55"/>
+      <ellipse data-trinket-shadow cx="96" cy="93" rx="17" ry="3" fill="var(--trinket-contact-shadow)" opacity=".55"/>
       <g data-trinket-cat transform="translate(96 93) scale(.285) translate(-80 -119)">
         <path d="${bodyPath}" fill="#17181b" stroke="#606069" stroke-width="2.4"/>
         <g data-trinket-face data-expression="open">

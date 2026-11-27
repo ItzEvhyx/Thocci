@@ -103,25 +103,46 @@ jobs:
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
             os: windows-latest
             platform: windows
             bundles: nsis,msi
+            stable_exe: Thocci-Setup-x64.exe
           - target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             platform: linux
             bundles: deb
+            stable_deb: Thocci-Linux-x64.deb
+            stable_elf: thocci-app-linux-x64
           - target: aarch64-unknown-linux-gnu
+            rust_targets: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             platform: linux
             bundles: deb
+            stable_deb: Thocci-Linux-arm64.deb
+            stable_elf: thocci-app-linux-arm64
           - target: x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
             os: macos-latest
             platform: macos
             bundles: app,dmg
+            stable_dmg: Thocci-macOS-Intel.dmg
+            updater_tar: Thocci-macOS-Intel.app.tar.gz
           - target: aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin
             os: macos-latest
             platform: macos
             bundles: app,dmg
+            stable_dmg: Thocci-macOS-AppleSilicon.dmg
+            updater_tar: Thocci-macOS-AppleSilicon.app.tar.gz
+          - target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            os: macos-latest
+            platform: macos
+            bundles: app,dmg
+            stable_dmg: Thocci-macOS.dmg
+            skip_tarball: true
 
     steps:
       - uses: actions/checkout@v4
@@ -146,12 +167,22 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_targets }}
 
       - name: Install Node dependencies and build desktop bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
         run: |
           npm ci
-          npm run build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          EXTRA_ARGS=()
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ "${{ matrix.skip_tarball }}" != "true" ] && [ "${{ matrix.platform }}" != "linux" ]; then
+            printf '%s\n' '{"bundle":{"createUpdaterArtifacts":true}}' > updater-ci.json
+            EXTRA_ARGS+=(--config updater-ci.json)
+          fi
+          npm run build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} "${EXTRA_ARGS[@]}"
+          rm -f updater-ci.json
 
       - name: Determine version
         id: version
@@ -165,6 +196,9 @@ jobs:
 
       - name: Package desktop installer archive (Linux)
         if: matrix.platform == 'linux'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
         run: |
           STAGE="desktop-stage"
@@ -175,17 +209,44 @@ jobs:
           tar czf "$ARCHIVE" -C "$STAGE" thocci-app icons
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
           find "target/${{ matrix.target }}/release/bundle" -maxdepth 3 \( -name '*.deb' -o -name '*.AppImage' -o -name '*.rpm' \) -exec cp {} dist-desktop/ \; || true
+          DEB_FILE="$(find "target/${{ matrix.target }}/release/bundle/deb" -maxdepth 1 -name '*.deb' | head -n 1 || true)"
+          if [ -n "$DEB_FILE" ] && [ -n "${{ matrix.stable_deb }}" ]; then
+            cp "$DEB_FILE" "dist-desktop/${{ matrix.stable_deb }}"
+            sha256sum "dist-desktop/${{ matrix.stable_deb }}" > "dist-desktop/${{ matrix.stable_deb }}.sha256"
+          fi
+          if [ -n "${{ matrix.stable_elf }}" ]; then
+            cp "target/${{ matrix.target }}/release/thocci-app" "dist-desktop/${{ matrix.stable_elf }}"
+          fi
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            if [ -n "${{ matrix.stable_elf }}" ] && [ -f "dist-desktop/${{ matrix.stable_elf }}" ]; then
+              npx tauri signer sign "dist-desktop/${{ matrix.stable_elf }}"
+            fi
+            if [ -n "${{ matrix.stable_deb }}" ] && [ -f "dist-desktop/${{ matrix.stable_deb }}" ]; then
+              npx tauri signer sign "dist-desktop/${{ matrix.stable_deb }}"
+            fi
+          fi
 
       - name: Package desktop installer archive (macOS)
         if: matrix.platform == 'macos'
         shell: bash
         run: |
           mkdir -p dist-desktop
-          BUNDLE_DIR="target/${{ matrix.target }}/release/bundle/macos"
-          ARCHIVE="dist-desktop/thocci-desktop-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
-          tar czf "$ARCHIVE" -C "$BUNDLE_DIR" "Thocci.app"
-          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          if [ "${{ matrix.skip_tarball }}" != "true" ]; then
+            BUNDLE_DIR="target/${{ matrix.target }}/release/bundle/macos"
+            ARCHIVE="dist-desktop/thocci-desktop-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
+            tar czf "$ARCHIVE" -C "$BUNDLE_DIR" "Thocci.app"
+            shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+            if [ -n "${{ matrix.updater_tar }}" ] && [ -f "$BUNDLE_DIR/Thocci.app.tar.gz" ] && [ -f "$BUNDLE_DIR/Thocci.app.tar.gz.sig" ]; then
+              cp "$BUNDLE_DIR/Thocci.app.tar.gz" "dist-desktop/${{ matrix.updater_tar }}"
+              cp "$BUNDLE_DIR/Thocci.app.tar.gz.sig" "dist-desktop/${{ matrix.updater_tar }}.sig"
+            fi
+          fi
           find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -exec cp {} dist-desktop/ \; || true
+          DMG_FILE="$(find "target/${{ matrix.target }}/release/bundle/dmg" -maxdepth 1 -name '*.dmg' | head -n 1 || true)"
+          if [ -n "$DMG_FILE" ] && [ -n "${{ matrix.stable_dmg }}" ]; then
+            cp "$DMG_FILE" "dist-desktop/${{ matrix.stable_dmg }}"
+            shasum -a 256 "dist-desktop/${{ matrix.stable_dmg }}" > "dist-desktop/${{ matrix.stable_dmg }}.sha256"
+          fi
 
       - name: Package desktop installer archive (Windows)
         if: matrix.platform == 'windows'
@@ -198,6 +259,17 @@ jobs:
           $Hash = (Get-FileHash -Path $Archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$Hash  $(Split-Path -Leaf $Archive)" | Out-File -FilePath "$Archive.sha256" -Encoding ascii
           Get-ChildItem "target/${{ matrix.target }}/release/bundle" -Recurse -Include *.exe,*.msi -ErrorAction SilentlyContinue | Copy-Item -Destination dist-desktop/ -Force
+          $NsisExe = Get-ChildItem "target/${{ matrix.target }}/release/bundle/nsis" -Filter "*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($NsisExe -and "${{ matrix.stable_exe }}") {
+            $StableExe = "dist-desktop/${{ matrix.stable_exe }}"
+            Copy-Item -Path $NsisExe.FullName -Destination $StableExe -Force
+            $ExeHash = (Get-FileHash -Path $StableExe -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$ExeHash  ${{ matrix.stable_exe }}" | Out-File -FilePath "$StableExe.sha256" -Encoding ascii
+            $SigSrc = "$($NsisExe.FullName).sig"
+            if (Test-Path $SigSrc) {
+              Copy-Item -Path $SigSrc -Destination "$StableExe.sig" -Force
+            }
+          }
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4
@@ -216,6 +288,53 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Generate signed latest.json updater manifest
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          REPO="${GITHUB_REPOSITORY}"
+          python3 - "$TAG" "$VERSION" "$REPO" <<'PY'
+          import datetime, json, pathlib, sys
+
+          tag, version, repo = sys.argv[1], sys.argv[2], sys.argv[3]
+          art = pathlib.Path("artifacts")
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+
+          mapping = [
+              ("windows-x86_64", "Thocci-Setup-x64.exe"),
+              ("windows-x86_64-nsis", "Thocci-Setup-x64.exe"),
+              ("darwin-aarch64", "Thocci-macOS-AppleSilicon.app.tar.gz"),
+              ("darwin-x86_64", "Thocci-macOS-Intel.app.tar.gz"),
+              ("linux-x86_64", "thocci-app-linux-x64"),
+              ("linux-aarch64", "thocci-app-linux-arm64"),
+              ("linux-x86_64-deb", "Thocci-Linux-x64.deb"),
+              ("linux-aarch64-deb", "Thocci-Linux-arm64.deb"),
+          ]
+
+          platforms = {}
+          for key, filename in mapping:
+              bin_path = art / filename
+              sig_path = art / f"{filename}.sig"
+              if bin_path.is_file() and sig_path.is_file():
+                  platforms[key] = {
+                      "signature": sig_path.read_text(encoding="utf-8").strip(),
+                      "url": f"{base}/{filename}",
+                  }
+
+          if platforms:
+              manifest = {
+                  "version": version,
+                  "notes": f"Thocci {tag}",
+                  "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "platforms": platforms,
+              }
+              (art / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+              print(f"Generated latest.json for {version} with targets: {sorted(platforms.keys())}")
+          else:
+              print("No .sig updater artifacts found (TAURI_SIGNING_PRIVATE_KEY not configured); skipping latest.json.")
+          PY
 
       - name: List artifacts
         run: ls -lhR artifacts/

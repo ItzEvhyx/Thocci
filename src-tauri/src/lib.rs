@@ -10,6 +10,7 @@ mod platform;
 mod prefs;
 mod preview;
 mod tray;
+mod updater;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -75,6 +76,7 @@ pub(crate) struct AppState {
     pub last_quick_actions_blur_ms: AtomicU64,
     pub last_quick_actions_show_ms: AtomicU64,
     pub last_quick_actions_placement: Mutex<Option<QuickActionsPlacement>>,
+    pub pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
     pub is_quitting: AtomicBool,
 }
 
@@ -91,6 +93,7 @@ impl Default for AppState {
             last_quick_actions_blur_ms: AtomicU64::new(0),
             last_quick_actions_show_ms: AtomicU64::new(0),
             last_quick_actions_placement: Mutex::new(None),
+            pending_update: Mutex::new(None),
             is_quitting: AtomicBool::new(false),
         }
     }
@@ -547,6 +550,16 @@ fn hide_quick_actions(app: AppHandle<Wry>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn check_for_update(app: AppHandle<Wry>) -> Result<updater::UpdateInfo, String> {
+    updater::check_for_update(&app).await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle<Wry>) -> Result<(), String> {
+    updater::install_pending_update(app).await
+}
+
+#[tauri::command]
 async fn quit_app(app: AppHandle<Wry>) -> Result<(), String> {
     shutdown_and_exit(app).await;
     Ok(())
@@ -686,10 +699,14 @@ fn broadcast_status(app: &AppHandle<Wry>, status: &DaemonStatus) {
     let _ = app.emit("thocci://state-changed", status);
 }
 
-/// Prefer a sibling `thocci` CLI binary (lighter process for the background
-/// daemon), falling back to this executable (`thocci-app daemon ...`).
+/// Development builds run their own daemon so both processes use the same
+/// embedded soundpacks. Installed builds can use the sibling CLI to save memory.
 fn resolve_daemon_exe() -> std::io::Result<PathBuf> {
     let current = std::env::current_exe()?;
+    if cfg!(debug_assertions) {
+        return Ok(current);
+    }
+
     let bin_name = if cfg!(windows) {
         "thocci.exe"
     } else {
@@ -712,6 +729,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|arg| arg == "--quick-actions") {
                 tray::toggle_quick_actions_anchored(app, None);
@@ -868,6 +886,8 @@ pub fn run() {
             open_dashboard,
             open_quick_actions,
             hide_quick_actions,
+            check_for_update,
+            install_update,
             quit_app,
         ])
         .run(tauri::generate_context!())

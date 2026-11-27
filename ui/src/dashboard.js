@@ -9,7 +9,7 @@
  * - Preserves active pack, volume, sidebar view, and search query across theme toggles.
  */
 
-import { api, currentTauriWindow, listenEvent } from "./bridge.js";
+import { api, currentTauriWindow, isTauriRuntime, listenEvent } from "./bridge.js";
 import { iconMarkup } from "./icons.js";
 import { mountInteractiveKeyboard } from "./keyboard.js";
 import { mountSidebarTrinket } from "./sidebar-trinket.js";
@@ -40,6 +40,20 @@ export function isPointerBlurControl(el) {
   return role === "button" || role === "switch";
 }
 
+function soundpackSource(pack) {
+  return pack.source || (pack.origin === "imported" ? "Imported WAVs" : "Original library");
+}
+
+export function groupCatalogBySource(catalog) {
+  const sections = new Map();
+  for (const pack of catalog) {
+    const source = soundpackSource(pack);
+    if (!sections.has(source)) sections.set(source, []);
+    sections.get(source).push(pack);
+  }
+  return sections;
+}
+
 export function filterCatalog(catalog, query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return catalog;
@@ -47,6 +61,7 @@ export function filterCatalog(catalog, query) {
     (pack) =>
       pack.display_name.toLowerCase().includes(q) ||
       pack.id.toLowerCase().includes(q) ||
+      soundpackSource(pack).toLowerCase().includes(q) ||
       (pack.subtitle && pack.subtitle.toLowerCase().includes(q)) ||
       (pack.raw_name && pack.raw_name.toLowerCase().includes(q)),
   );
@@ -960,20 +975,70 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     },
   });
 
-  // ── Banner / Feedback helpers ─────────────────────────────────────────────
+  // ── Banner / Feedback & In-App Updater helpers ────────────────────────────
   let bannerTimeout = null;
-  function setBanner(kind, text, { showGuide = false, autoClearMs = 0 } = {}) {
+  let updateCheckTimer = null;
+  let availableUpdate = null;
+  let isCheckingUpdate = false;
+  let isInstallingUpdate = false;
+
+  function setBanner(
+    kind,
+    text,
+    { showGuide = false, showUpdate = false, autoClearMs = 0 } = {},
+  ) {
     if (bannerTimeout) {
       clearTimeout(bannerTimeout);
       bannerTimeout = null;
     }
-    banner = text ? { kind, text, showGuide } : null;
+    banner = text ? { kind, text, showGuide, showUpdate } : null;
     renderBanner();
     if (autoClearMs > 0 && banner) {
       bannerTimeout = setTimeout(() => {
         banner = null;
         renderBanner();
       }, autoClearMs);
+    }
+  }
+
+  async function runUpdateInstall() {
+    if (isInstallingUpdate) return;
+    isInstallingUpdate = true;
+    const versionLabel = availableUpdate?.version ? `v${availableUpdate.version}` : "latest";
+    setBanner("success", `Downloading Thocci ${versionLabel}…`);
+    try {
+      await api.installUpdate();
+    } catch (err) {
+      isInstallingUpdate = false;
+      setBanner("error", `Update failed: ${String(err)}`);
+    }
+  }
+
+  async function runUpdateCheck({ silent = false } = {}) {
+    if (isCheckingUpdate || isInstallingUpdate) return null;
+    isCheckingUpdate = true;
+    try {
+      const info = await api.checkForUpdate();
+      if (info?.available && info.version) {
+        availableUpdate = info;
+        setBanner("success", `Thocci v${info.version} is available.`, {
+          showUpdate: true,
+        });
+      } else {
+        availableUpdate = null;
+        if (!silent) {
+          const cur = info?.currentVersion ? ` (v${info.currentVersion})` : "";
+          setBanner("success", `Thocci is up to date${cur}.`, { autoClearMs: 4000 });
+        }
+      }
+      return info;
+    } catch (err) {
+      if (!silent) {
+        setBanner("warn", String(err), { autoClearMs: 6000 });
+      }
+      return null;
+    } finally {
+      isCheckingUpdate = false;
     }
   }
 
@@ -988,11 +1053,17 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       <div class="banner banner--${banner.kind}">
         <span>${escapeHtml(banner.text)}</span>
         <div class="banner-actions">
+          ${banner.showUpdate ? `<button type="button" class="banner-btn" data-action="install-update" ${isInstallingUpdate ? "disabled" : ""}>${isInstallingUpdate ? "Updating…" : "Update & Restart"}</button>` : ""}
           ${banner.showGuide ? `<button type="button" class="banner-btn" data-action="guide">Setup guide</button>` : ""}
           <button type="button" class="banner-btn" data-action="dismiss" aria-label="Dismiss message">Dismiss</button>
         </div>
       </div>
     `;
+    bannerSlot
+      .querySelector('[data-action="install-update"]')
+      ?.addEventListener("click", () => {
+        void runUpdateInstall();
+      });
     bannerSlot.querySelector('[data-action="guide"]')?.addEventListener("click", openSetupGuide);
     bannerSlot.querySelector('[data-action="dismiss"]')?.addEventListener("click", () => {
       setBanner(null, "");
@@ -1114,10 +1185,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   function renderCatalogList() {
     const filtered = filterCatalog(catalog, searchQuery);
-    const builtins = filtered.filter((p) => p.origin === "builtin");
-    const imported = filtered.filter((p) => p.origin === "imported");
-    const totalBuiltins = catalog.filter((p) => p.origin === "builtin").length;
-    const totalImported = catalog.filter((p) => p.origin === "imported").length;
     const isSearching = searchQuery.trim().length > 0;
 
     if (filtered.length === 0) {
@@ -1137,15 +1204,13 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       return;
     }
 
-    const sectionsHtml = [];
-    if (builtins.length > 0) {
-      const countLabel = isSearching ? `${builtins.length} / ${totalBuiltins}` : String(totalBuiltins);
-      sectionsHtml.push(renderPackSection("Built-in", countLabel, builtins));
-    }
-    if (imported.length > 0) {
-      const countLabel = isSearching ? `${imported.length} / ${totalImported}` : String(totalImported);
-      sectionsHtml.push(renderPackSection("Imported", countLabel, imported));
-    }
+    const sections = groupCatalogBySource(filtered);
+    const totals = isSearching ? groupCatalogBySource(catalog) : sections;
+    const sectionsHtml = Array.from(sections, ([source, items]) => {
+      const total = totals.get(source).length;
+      const countLabel = isSearching ? `${items.length} / ${total}` : String(total);
+      return renderPackSection(source, countLabel, items);
+    });
 
     spListScroll.innerHTML = sectionsHtml.join("");
 
@@ -1740,6 +1805,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           <button id="guideQuitBtn" type="button" class="btn-danger-ghost">Quit Thocci</button>
           <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
             ${!info.tray_available ? `<button id="guideQuickActionsBtn" type="button" class="btn-secondary">Open Quick Actions</button>` : ""}
+            <button id="guideUpdateBtn" type="button" class="btn-secondary">${availableUpdate?.version ? `Update to v${escapeHtml(availableUpdate.version)}` : "Check for updates"}</button>
             <button id="guideRefreshBtn" type="button" class="btn-secondary">Refresh status</button>
             <button id="guideDoneBtn" type="button" class="btn-primary">Done</button>
           </div>
@@ -1750,6 +1816,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     const closeBtn = setupGuideModal.querySelector("#guideCloseTop");
     const doneBtn = setupGuideModal.querySelector("#guideDoneBtn");
     const refreshBtn = setupGuideModal.querySelector("#guideRefreshBtn");
+    const updateBtn = setupGuideModal.querySelector("#guideUpdateBtn");
     const quickActionsBtn = setupGuideModal.querySelector("#guideQuickActionsBtn");
     const quitBtn = setupGuideModal.querySelector("#guideQuitBtn");
     const winWInput = setupGuideModal.querySelector("#guideWinW");
@@ -1785,6 +1852,22 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       platformInfo = await api.getPlatformInfo().catch(() => platformInfo);
       await reconcileAll();
       openSetupGuide({ focusClose: false, animate: false });
+    });
+    updateBtn?.addEventListener("click", async () => {
+      if (availableUpdate?.version) {
+        closeSetupGuide({ restoreFocus: false });
+        void runUpdateInstall();
+        return;
+      }
+      updateBtn.disabled = true;
+      updateBtn.textContent = "Checking…";
+      const result = await runUpdateCheck({ silent: false });
+      if (result?.available && result.version) {
+        closeSetupGuide({ restoreFocus: false });
+      } else if (updateBtn.isConnected) {
+        updateBtn.disabled = false;
+        updateBtn.textContent = "Up to date";
+      }
     });
     quickActionsBtn?.addEventListener("click", () => {
       closeSetupGuide({ restoreFocus: false });
@@ -1932,6 +2015,19 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     }
   });
 
+  const unlistenUpdateProgress = await listenEvent("thocci://update-progress", (progress) => {
+    if (!isInstallingUpdate || !progress) return;
+    const versionLabel = availableUpdate?.version ? `v${availableUpdate.version}` : "latest";
+    if (progress.phase === "installing") {
+      setBanner("success", `Installing Thocci ${versionLabel} & restarting…`);
+      return;
+    }
+    if (progress.total && progress.total > 0) {
+      const pct = Math.min(100, Math.round((progress.downloaded / progress.total) * 100));
+      setBanner("success", `Downloading Thocci ${versionLabel}… ${pct}%`);
+    }
+  });
+
   window.addEventListener("focus", () => {
     void reconcileAll();
   });
@@ -1940,12 +2036,21 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   renderStatus();
   playEntranceAnimation();
 
+  // Check silently for signed updates a few seconds after launch so startup stays instant
+  if (isTauriRuntime()) {
+    updateCheckTimer = setTimeout(() => {
+      updateCheckTimer = null;
+      void runUpdateCheck({ silent: true });
+    }, 3000);
+  }
+
   return {
     destroy() {
       if (entranceTimer) clearTimeout(entranceTimer);
       if (closeAnimTimer) clearTimeout(closeAnimTimer);
       if (modalAnimTimer) clearTimeout(modalAnimTimer);
       if (stageSwapTimer) clearTimeout(stageSwapTimer);
+      if (updateCheckTimer) clearTimeout(updateCheckTimer);
       typingGame?.destroy();
       clearTypedStream();
       cleanupThemeTransition();
@@ -1958,6 +2063,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       unlistenShown();
       unlistenHidden();
       unlistenFileDialog();
+      unlistenUpdateProgress();
       unlistenState();
       unlistenCatalog();
       unlistenNavigate();

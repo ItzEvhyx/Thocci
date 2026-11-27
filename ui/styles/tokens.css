@@ -41,6 +41,13 @@
   --kb-cap-highlight-top: rgba(255, 255, 255, 0.85);
   --kb-cap-highlight-bottom: rgba(255, 255, 255, 0);
   --kb-legend: #545863;
+  --trinket-cap-highlight: #FFFFFF;
+  --trinket-cap-surface: var(--kb-cap-top);
+  --trinket-cap-side: var(--kb-cap-bottom);
+  --trinket-cap-base: #D1D7E2;
+  --trinket-cap-edge: #8690A2;
+  --trinket-deck-shadow: rgba(64, 74, 95, 0.24);
+  --trinket-contact-shadow: #858C9B;
 
   /* Light interactive accents */
   --accent: #435EC6;
@@ -128,6 +135,13 @@
   --kb-cap-highlight-top: rgba(255, 255, 255, 0.24);
   --kb-cap-highlight-bottom: rgba(255, 255, 255, 0.14);
   --kb-legend: #E6E6EC;
+  --trinket-cap-highlight: #53545D;
+  --trinket-cap-surface: #3B3C43;
+  --trinket-cap-side: #292A30;
+  --trinket-cap-base: #18191F;
+  --trinket-cap-edge: #90929E;
+  --trinket-deck-shadow: rgba(8, 8, 11, 0.56);
+  --trinket-contact-shadow: #111116;
 
   /* Charcoal neutral gray accents in dark mode */
   --accent: #D4D4D6;

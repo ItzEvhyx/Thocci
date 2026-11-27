@@ -38,6 +38,8 @@ const mockState = {
     { id: "creamy", display_name: "Creamy", subtitle: "Soft and muted", raw_name: "creamy (still getting better)", origin: "builtin", is_default: false },
     { id: "wooden-keyboard", display_name: "Wooden Keyboard", subtitle: "Dry and hollow", raw_name: "Wooden Keyboard", origin: "builtin", is_default: false },
     { id: "typewriter", display_name: "Typewriter", subtitle: "Classic mechanical", raw_name: "TypeWriter", origin: "builtin", is_default: false },
+    { id: "alpaca", display_name: "Durock Alpaca", subtitle: "Built-in soundpack", raw_name: "Durock Alpaca", origin: "builtin", source: "kbsim", is_default: false },
+    { id: "cherrymx-blue-pbt", display_name: "CherryMX Blue - PBT keycaps", subtitle: "Built-in soundpack", raw_name: "CherryMX Blue - PBT keycaps", origin: "builtin", source: "Mechvibes", is_default: false },
   ],
 };
 
@@ -110,6 +112,15 @@ async function call(cmd, args = {}) {
       return null;
     case "pick_and_import_wav":
       return null;
+    case "check_for_update":
+      return {
+        available: false,
+        currentVersion: "1.0.4",
+        version: null,
+        notes: null,
+      };
+    case "install_update":
+      return null;
     default:
       return null;
   }
@@ -139,6 +150,8 @@ export const api = {
   openDashboard: (route = null) => call("open_dashboard", { route }),
   openQuickActions: () => call("open_quick_actions"),
   hideQuickActions: () => call("hide_quick_actions"),
+  checkForUpdate: () => call("check_for_update"),
+  installUpdate: () => call("install_update"),
   quitApp: () => call("quit_app"),
 };
 

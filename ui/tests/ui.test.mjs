@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { KeyHoldTracker } from "../src/keyboard.js";
 import {
   filterCatalog,
+  groupCatalogBySource,
   isPointerBlurControl,
   isTextEditableElement,
 } from "../src/dashboard.js";
@@ -126,6 +127,25 @@ test("filterCatalog filters by display_name, id, subtitle, and raw_name", () => 
   assert.equal(filterCatalog(sample, "abs").length, 1);
   assert.equal(filterCatalog(sample, "imported")[0].id, "imported-custom-thock");
   assert.equal(filterCatalog(sample, "nonexistent-pack").length, 0);
+});
+
+test("soundpack source sections keep packs separate and searchable", () => {
+  const packs = [
+    { id: "cherry-mx", display_name: "Cherry MX Black", origin: "builtin" },
+    { id: "alpaca", display_name: "Durock Alpaca", origin: "builtin", source: "kbsim" },
+    { id: "cherrymx-blue-pbt", display_name: "Cherry MX Blue", origin: "builtin", source: "Mechvibes" },
+    { id: "imported-click", display_name: "My Click", origin: "imported" },
+  ];
+  assert.deepEqual([...groupCatalogBySource(packs)], [
+    ["Original library", [packs[0]]],
+    ["kbsim", [packs[1]]],
+    ["Mechvibes", [packs[2]]],
+    ["Imported WAVs", [packs[3]]],
+  ]);
+  assert.deepEqual(filterCatalog(packs, "mechvibes"), [packs[2]]);
+  assert.deepEqual([...groupCatalogBySource(filterCatalog(packs, "alpaca"))], [
+    ["kbsim", [packs[1]]],
+  ]);
 });
 
 test("design tokens, stage poses, and bundled desktop assets match desktopui.md", () => {

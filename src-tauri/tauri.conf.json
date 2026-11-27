@@ -37,7 +37,7 @@
     "targets": "all",
     "category": "Utility",
     "shortDescription": "Mechanical keyboard sounds for your desktop",
-    "longDescription": "Thocci gives your physical keyboard a custom mechanical sound with 20 built-in soundpacks, local WAV import, and an interactive desktop dashboard.",
+    "longDescription": "Thocci gives your physical keyboard a custom mechanical sound with 41 built-in soundpacks, local WAV import, and an interactive desktop dashboard.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,9 +46,45 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false,
+        "compression": "lzma"
+      }
+    },
+    "macOS": {
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
+    },
     "linux": {
       "deb": {
         "depends": []
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzMzVGRUNENUI0NjdEMDYKUldRR2ZVWmJ6ZjQxMDhUbHAxTU1ncDhhTHZaUGRHK1BPVGcyT1F2cDFUbUM4Vi9NT0VTWVF2dHUK",
+      "endpoints": [
+        "https://github.com/ItzEvhyx/Thocci/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

@@ -41,6 +41,7 @@ pub struct BuiltinPackMeta {
     pub id: &'static str,
     pub display_name: &'static str,
     pub folder_name: &'static str,
+    pub source: &'static str,
 }
 
 /// Whether a catalog soundpack ships embedded or was imported by the user.
@@ -59,6 +60,7 @@ pub struct PackCatalogEntry {
     pub subtitle: String,
     pub raw_name: String,
     pub origin: PackOrigin,
+    pub source: &'static str,
     pub is_default: bool,
 }
 
@@ -137,6 +139,7 @@ pub fn builtin_catalog_entry(meta: &BuiltinPackMeta) -> PackCatalogEntry {
         subtitle: subtitle.to_owned(),
         raw_name: meta.display_name.to_owned(),
         origin: PackOrigin::Builtin,
+        source: meta.source,
         is_default: meta.id == DEFAULT_PACK_ID,
     }
 }
@@ -187,6 +190,7 @@ pub fn list_imported_packs() -> Vec<PackCatalogEntry> {
             subtitle,
             raw_name: name,
             origin: PackOrigin::Imported,
+            source: "Imported WAVs",
             is_default: false,
         });
     }
@@ -416,6 +420,7 @@ pub fn import_wav(wav_path: &Path, custom_name: Option<&str>) -> Result<PackCata
             subtitle,
             raw_name: display_name,
             origin: PackOrigin::Imported,
+            source: "Imported WAVs",
             is_default: false,
         })
     })();
@@ -1127,7 +1132,7 @@ mod tests {
 
     #[test]
     fn loads_all_embedded_soundpacks() {
-        assert_eq!(BUILTIN_PACKS.len(), 20);
+        assert_eq!(BUILTIN_PACKS.len(), 41);
         for meta in BUILTIN_PACKS {
             let pack = Soundpack::load_builtin(meta.id, Some(48_000))
                 .unwrap_or_else(|err| panic!("failed to load '{}': {err}", meta.id));
@@ -1150,11 +1155,38 @@ mod tests {
     }
 
     #[test]
+    fn catalog_uses_source_folders_without_changing_pack_ids() {
+        for (id, source) in [
+            (DEFAULT_PACK_ID, "Original library"),
+            ("cherrymx-blue-pbt", "Mechvibes"),
+            ("alpaca", "kbsim"),
+        ] {
+            let entry = resolve_any_pack_query(id).unwrap();
+            assert_eq!(entry.id, id);
+            assert_eq!(entry.source, source);
+        }
+    }
+
+    #[test]
     fn loads_press_and_release_sounds_for_v2_pack() {
         let pack = Soundpack::load_builtin("orange-deluxe", Some(48_000)).unwrap();
         let sound = pack.sound_for_linux_key(30).expect("KEY_A sound");
         assert!(sound.down.samples.len() > 200);
         assert!(sound.up.as_ref().is_some_and(|u| u.samples.len() > 200));
+    }
+
+    #[test]
+    fn kbsim_packs_keep_key_rows_and_release_samples() {
+        let pack = Soundpack::load_builtin("alpaca", Some(48_000)).unwrap();
+        let home = pack.sound_for_dom_code("KeyA").unwrap();
+        let top = pack.sound_for_dom_code("KeyQ").unwrap();
+        let space = pack.sound_for_dom_code("Space").unwrap();
+        assert_ne!(home.down.samples.as_ref(), top.down.samples.as_ref());
+        assert_ne!(home.down.samples.as_ref(), space.down.samples.as_ref());
+        assert_ne!(
+            home.up.as_ref().unwrap().samples.as_ref(),
+            space.up.as_ref().unwrap().samples.as_ref()
+        );
     }
 
     #[test]
@@ -1228,6 +1260,7 @@ mod tests {
 
         let entry = import_wav(&tmp_wav, None).expect("valid WAV imports cleanly");
         assert_eq!(entry.origin, PackOrigin::Imported);
+        assert_eq!(entry.source, "Imported WAVs");
         assert!(entry.id.starts_with("imported-custom-thock"));
         assert!(is_known_pack(&entry.id));
 
