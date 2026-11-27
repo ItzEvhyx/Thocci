@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { api } from "../src/bridge.js";
 import { KeyHoldTracker } from "../src/keyboard.js";
 import {
   filterCatalog,
@@ -482,4 +483,44 @@ test("sidebar trinket honors Animate Thocci off, reduced motion, and suspension 
   assert.equal(ctrl.setAnimated(false), false); // idempotent
   assert.equal(ctrl.getState().currentKey, 1);
   assert.equal(ctrl.triggerKeystroke(500), false, "ignored while Animate Thocci is off");
+});
+
+test("Stereo audio toggle defaults off, persists via bridge mock, and sits between Animate Thocci and Setup guide", async () => {
+  const prevWindow = globalThis.window;
+  globalThis.window = {};
+  try {
+    const initial = await api.getStatus();
+    assert.equal(initial.stereo, false);
+    assert.equal(initial.saved_stereo, false);
+
+    const enabled = await api.setStereo(true);
+    assert.equal(enabled.stereo, true);
+    assert.equal(enabled.saved_stereo, true);
+
+    const disabled = await api.setStereo(false);
+    assert.equal(disabled.stereo, false);
+    assert.equal(disabled.saved_stereo, false);
+  } finally {
+    if (prevWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = prevWindow;
+    }
+  }
+
+  const dashboardSrc = fs.readFileSync(path.join(root, "ui", "src", "dashboard.js"), "utf8");
+  const animateIdx = dashboardSrc.indexOf('id="animateRow"');
+  const stereoIdx = dashboardSrc.indexOf('id="stereoRow"');
+  const setupIdx = dashboardSrc.indexOf('id="setupGuideBtn"');
+  assert.ok(animateIdx > 0 && stereoIdx > animateIdx && setupIdx > stereoIdx);
+  assert.match(
+    dashboardSrc,
+    /id="stereoToggle"[\s\S]*?role="switch"[\s\S]*?aria-checked="\$\{status\.stereo \? "true" : "false"\}"[\s\S]*?aria-label="Stereo audio"/,
+  );
+  // Generic soundpack selection audition passes null code so it stays centered
+  assert.match(dashboardSrc, /api\.playPreview\(null,\s*"down"\)/);
+
+  // Disabled-state CSS must keep Stereo audio interactive when playback is off
+  const cssSrc = fs.readFileSync(path.join(root, "ui", "styles", "app.css"), "utf8");
+  assert.equal(cssSrc.includes("#stereoRow"), false);
 });

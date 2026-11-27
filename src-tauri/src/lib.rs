@@ -69,6 +69,8 @@ pub(crate) struct AppState {
     pub engine_lock: Arc<Mutex<()>>,
     pub preview: Arc<PreviewPlayer>,
     pub tray_available: AtomicBool,
+    pub confirmed_stereo: AtomicBool,
+    pub has_confirmed_status: AtomicBool,
     #[cfg(target_os = "linux")]
     pub linux_tray_handle: Mutex<Option<ksni::Handle<tray::LinuxTray>>>,
     #[cfg(not(target_os = "linux"))]
@@ -86,6 +88,8 @@ impl Default for AppState {
             engine_lock: Arc::new(Mutex::new(())),
             preview: Arc::new(PreviewPlayer::new()),
             tray_available: AtomicBool::new(false),
+            confirmed_stereo: AtomicBool::new(false),
+            has_confirmed_status: AtomicBool::new(false),
             #[cfg(target_os = "linux")]
             linux_tray_handle: Mutex::new(None),
             #[cfg(not(target_os = "linux"))]
@@ -116,6 +120,7 @@ async fn get_status(app: AppHandle<Wry>) -> Result<DaemonStatus, String> {
     let status = tauri::async_runtime::spawn_blocking(client::status)
         .await
         .map_err(|err| err.to_string())?;
+    record_confirmed_status(&app, &status);
     tray::refresh_tray_status(&app, status.running);
     Ok(status)
 }
@@ -238,6 +243,22 @@ async fn set_pack(app: AppHandle<Wry>, pack_id: String) -> Result<DaemonStatus, 
 }
 
 #[tauri::command]
+async fn set_stereo(app: AppHandle<Wry>, enabled: bool) -> Result<DaemonStatus, String> {
+    let lock = Arc::clone(&app.state::<AppState>().engine_lock);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let res = client::set_stereo(enabled).map_err(|err| err.to_string());
+        let st = client::status();
+        (res, st)
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+
+    broadcast_status(&app, &result.1);
+    result.0.map(|_| result.1)
+}
+
+#[tauri::command]
 async fn import_wav_pack(
     app: AppHandle<Wry>,
     path: String,
@@ -343,11 +364,27 @@ async fn play_preview(
     code: Option<String>,
     kind: Option<String>,
 ) -> Result<bool, String> {
-    let preview = Arc::clone(&app.state::<AppState>().preview);
+    let state = app.state::<AppState>();
+    let preview = Arc::clone(&state.preview);
+    let cached_stereo = if state.has_confirmed_status.load(Ordering::Acquire) {
+        Some(state.confirmed_stereo.load(Ordering::Acquire))
+    } else {
+        None
+    };
+    let app_handle = app.clone();
     let kind_str = kind.unwrap_or_else(|| "down".to_owned());
     tauri::async_runtime::spawn_blocking(move || {
-        let st = client::status();
-        preview.play(code.as_deref(), &kind_str, &st.pack, st.volume)
+        let stereo = match cached_stereo {
+            Some(confirmed) => confirmed,
+            None => {
+                let st = client::status();
+                record_confirmed_status(&app_handle, &st);
+                st.stereo
+            }
+        };
+        let pack = thocci_core::paths::read_saved_pack();
+        let volume = thocci_core::paths::read_saved_volume();
+        preview.play(code.as_deref(), &kind_str, &pack, volume, stereo)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -589,7 +626,7 @@ pub(crate) fn show_dashboard_window(
     tray::hide_quick_actions_window(app);
 
     let Some(win) = app.get_webview_window("main") else {
-        return Err("Main dashboard window is unavailable".to_owned());
+        return Err("Home window is unavailable".to_owned());
     };
 
     let _ = win.show();
@@ -694,7 +731,16 @@ async fn ensure_tray_initialized_async(app: &AppHandle<Wry>) {
     }
 }
 
+fn record_confirmed_status(app: &AppHandle<Wry>, status: &DaemonStatus) {
+    let state = app.state::<AppState>();
+    state
+        .confirmed_stereo
+        .store(status.stereo, Ordering::Release);
+    state.has_confirmed_status.store(true, Ordering::Release);
+}
+
 fn broadcast_status(app: &AppHandle<Wry>, status: &DaemonStatus) {
+    record_confirmed_status(app, status);
     tray::refresh_tray_status(app, status.running);
     let _ = app.emit("thocci://state-changed", status);
 }
@@ -723,6 +769,7 @@ fn resolve_daemon_exe() -> std::io::Result<PathBuf> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    thocci_core::audio::apply_low_latency_env();
     #[cfg(target_os = "linux")]
     layer_shell::silence_ayatana_deprecation_warning();
 
@@ -871,6 +918,7 @@ pub fn run() {
             toggle_daemon,
             set_volume,
             set_pack,
+            set_stereo,
             import_wav_pack,
             pick_and_import_wav,
             play_preview,

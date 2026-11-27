@@ -52,7 +52,7 @@ export async function mountQuickActions(root) {
   root.innerHTML = `
     <div class="qa-viewport">
       <section class="qa-shell" role="dialog" aria-label="Thocci Quick Actions">
-        <h1 class="qa-wordmark">Thocci</h1>
+        <h1 class="qa-wordmark"><img src="./vendor/brand/thocci-wordmark.svg" width="388" height="99" alt="Thocci" draggable="false" /></h1>
         <div class="qa-mascot" aria-hidden="true">${mascotSvg}</div>
         <div class="qa-deck">
           <button

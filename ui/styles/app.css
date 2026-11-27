@@ -200,6 +200,13 @@ input {
   color: #17181D;
 }
 
+.onboarding-wordmark {
+  display: inline-block;
+  width: auto;
+  height: .74em;
+  vertical-align: -.015em;
+}
+
 .onboarding-tagline {
   margin: 10px 0 0;
   font-size: 16px;
@@ -315,19 +322,19 @@ body[data-layer-backdrop="true"] .qa-shell {
 
 .qa-wordmark {
   position: absolute;
-  top: 15px;
+  top: 17px;
   left: 0;
   right: 0;
   margin: 0;
-  text-align: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 43px;
-  line-height: 1.05;
-  letter-spacing: -0.025em;
-  color: #17181D;
   pointer-events: none;
   z-index: 2;
+}
+
+.qa-wordmark img {
+  display: block;
+  width: auto;
+  height: 32px;
+  margin-inline: auto;
 }
 
 .qa-mascot {
@@ -841,39 +848,20 @@ body[data-layer-backdrop="true"] .qa-shell {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 0 2px 16px;
+  padding: 6px 2px 23px;
   border-bottom: 1px solid var(--divider);
   flex-shrink: 0;
 }
 
-.sidebar-brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border-rim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--text-primary);
-}
-
-.sidebar-brand-mark svg {
-  width: 22px;
-  height: 22px;
-  display: block;
-}
-
 .sidebar-wordmark {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 26px;
-  line-height: 1;
-  letter-spacing: -0.025em;
-  color: var(--text-primary);
+  display: block;
+  width: auto;
+  height: 21px;
+}
+
+:root[data-theme="dark"] .sidebar-wordmark,
+[data-theme-scope="dark"] .sidebar-wordmark {
+  filter: invert(1);
 }
 
 /* Sidebar groups */
@@ -2573,7 +2561,7 @@ body[data-layer-backdrop="true"] .qa-shell {
   }
 
   .sidebar-brand {
-    padding: 0 2px 10px;
+    padding-bottom: 17px;
   }
 
   .sidebar-group {
@@ -2625,10 +2613,6 @@ body[data-layer-backdrop="true"] .qa-shell {
 @media (max-height: 600px) {
   .sidebar-pane {
     padding: 12px 10px 10px;
-  }
-
-  .sidebar-brand {
-    padding: 0 2px 10px;
   }
 
   .sidebar-group {

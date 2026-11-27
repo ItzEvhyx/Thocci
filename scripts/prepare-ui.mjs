@@ -21,6 +21,7 @@ const requiredDirs = [
 
 const requiredFiles = [
   "tokens.json",
+  path.join("brand", "thocci-wordmark.svg"),
   path.join("fonts", "fonts.css"),
   path.join("fonts", "dm-sans-bold-latin.woff2"),
   path.join("fonts", "dm-sans-bold-latin-ext.woff2"),
@@ -197,10 +198,9 @@ fs.mkdirSync(destVendor, { recursive: true });
 for (const relDir of requiredDirs) {
   copyRecursive(path.join(srcDesktop, relDir), path.join(destVendor, relDir));
 }
-fs.copyFileSync(
-  path.join(srcDesktop, "tokens.json"),
-  path.join(destVendor, "tokens.json"),
-);
+for (const relFile of ["tokens.json", path.join("brand", "thocci-wordmark.svg")]) {
+  fs.copyFileSync(path.join(srcDesktop, relFile), path.join(destVendor, relFile));
+}
 
 // Sync official ESC app icons into src-tauri/icons as RGBA PNGs + ICNS + ICO.
 fs.mkdirSync(destTauriIcons, { recursive: true });

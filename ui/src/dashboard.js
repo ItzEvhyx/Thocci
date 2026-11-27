@@ -79,8 +79,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     pid: null,
     volume: 100,
     pack: "cherry-mx",
+    stereo: false,
     saved_volume: 100,
     saved_pack: "cherry-mx",
+    saved_stereo: false,
   };
   let platformInfo = null;
   let sidebarView = initialRoute === "soundpacks" ? "soundpacks" : "settings";
@@ -88,6 +90,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   let banner = null; // { kind: 'error'|'warn'|'success', text, showGuide? }
   let isTogglingEngine = false;
   let isSwitchingPack = false;
+  let isSavingStereo = false;
   let isImporting = false;
   let volumeDragging = false;
 
@@ -168,8 +171,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
         <!-- Main Settings Sidebar Pane -->
         <div id="settingsPane" class="sidebar-pane sidebar-pane--settings">
           <header class="sidebar-brand" data-tauri-drag-region>
-            <div class="sidebar-brand-mark" aria-hidden="true">${iconMarkup("thocci-mark")}</div>
-            <span class="sidebar-wordmark">Thocci</span>
+            <img class="sidebar-wordmark" src="./vendor/brand/thocci-wordmark.svg" width="388" height="99" alt="Thocci" draggable="false" />
           </header>
 
           <section class="sidebar-group" aria-labelledby="grpPlayback">
@@ -266,6 +268,23 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
                 role="switch"
                 aria-checked="${prefs.animate_mascot ? "true" : "false"}"
                 aria-label="Animate Thocci"
+              >
+                <span class="switch-knob" aria-hidden="true"></span>
+              </button>
+            </div>
+
+            <div id="stereoRow" class="sidebar-row">
+              <div class="sidebar-row-left">
+                ${iconMarkup("volume")}
+                <span class="sidebar-row-title">Stereo audio</span>
+              </div>
+              <button
+                id="stereoToggle"
+                type="button"
+                class="switch-btn"
+                role="switch"
+                aria-checked="${status.stereo ? "true" : "false"}"
+                aria-label="Stereo audio"
               >
                 <span class="switch-knob" aria-hidden="true"></span>
               </button>
@@ -378,6 +397,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const importWavBtn = root.querySelector("#importWavBtn");
   const importWavLabel = root.querySelector("#importWavLabel");
   const animateToggle = root.querySelector("#animateToggle");
+  const stereoToggle = root.querySelector("#stereoToggle");
   const setupGuideBtn = root.querySelector("#setupGuideBtn");
   const sidebarTrinketEl = root.querySelector("#sidebarTrinket");
   const spBackBtn = root.querySelector("#spBackBtn");
@@ -1151,6 +1171,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     browseSoundpacksBtn.disabled = !enabled;
     importWavBtn.disabled = !enabled || isImporting;
     animateToggle.disabled = !enabled;
+    stereoToggle.setAttribute("aria-checked", status.stereo ? "true" : "false");
+    stereoToggle.disabled = isSavingStereo;
     themeToggleBtn.disabled = !enabled;
     if (challengeTriggerBtn) challengeTriggerBtn.disabled = !enabled;
     spSearchInput.disabled = !enabled;
@@ -1295,8 +1317,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       const confirmed = await api.setPack(packId);
       status = confirmed;
       renderStatus();
-      // Audition one gentle key sample from the confirmed pack
-      void api.playPreview("KeyA", "down").catch(() => {});
+      // Audition one gentle centered key sample from the confirmed pack
+      void api.playPreview(null, "down").catch(() => {});
     } catch (err) {
       const fresh = await api.getStatus().catch(() => status);
       status = fresh;
@@ -1556,6 +1578,28 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     }
   });
 
+  // Stereo audio toggle (persisted in core engine state; allowed even while playback is off)
+  stereoToggle.addEventListener("click", async () => {
+    if (isSavingStereo) return;
+    isSavingStereo = true;
+    stereoToggle.disabled = true;
+    setBanner(null, "");
+
+    try {
+      const confirmed = await api.setStereo(!status.stereo);
+      status = confirmed;
+      renderStatus();
+    } catch (err) {
+      const fresh = await api.getStatus().catch(() => status);
+      status = fresh;
+      renderStatus();
+      setBanner("error", String(err));
+    } finally {
+      isSavingStereo = false;
+      stereoToggle.disabled = false;
+    }
+  });
+
   // GPU-composited circular bottom-left theme reveal (slow start -> steadily accelerating).
   // Uses the native View Transitions API scoped strictly to `.dashboard-shell` so only
   // two flat GPU textures are composited (zero DOM cloning, zero live SVG re-rasterization),
@@ -1748,7 +1792,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
               </div>
               <div class="guide-diag-item">
                 <span class="guide-diag-label">Session / Tray</span>
-                <span class="guide-diag-value">${escapeHtml(info.session_type || "standard")} · ${info.tray_available ? "Tray active" : "Dashboard fallback"}</span>
+                <span class="guide-diag-value">${escapeHtml(info.session_type || "standard")} · ${info.tray_available ? "Tray active" : "Home fallback"}</span>
               </div>
               <div class="guide-diag-item">
                 <span class="guide-diag-label">Input access</span>

@@ -22,8 +22,10 @@ const mockState = {
     pid: 4242,
     volume: 55,
     pack: "creamy",
+    stereo: false,
     saved_volume: 55,
     saved_pack: "creamy",
+    saved_stereo: false,
   },
   prefs: {
     onboarding_completed: true,
@@ -75,6 +77,12 @@ async function call(cmd, args = {}) {
       mockState.status.pack = args.packId;
       mockState.status.saved_pack = args.packId;
       return { ...mockState.status };
+    case "set_stereo": {
+      const enabled = Boolean(args.enabled);
+      mockState.status.stereo = enabled;
+      mockState.status.saved_stereo = enabled;
+      return { ...mockState.status };
+    }
     case "get_ui_prefs":
       return { ...mockState.prefs };
     case "save_ui_prefs":
@@ -115,7 +123,7 @@ async function call(cmd, args = {}) {
     case "check_for_update":
       return {
         available: false,
-        currentVersion: "1.0.5",
+        currentVersion: "1.1.0",
         version: null,
         notes: null,
       };
@@ -134,6 +142,7 @@ export const api = {
   toggleDaemon: () => call("toggle_daemon"),
   setVolume: (level) => call("set_volume", { level }),
   setPack: (packId) => call("set_pack", { packId }),
+  setStereo: (enabled) => call("set_stereo", { enabled }),
   pickAndImportWav: () => call("pick_and_import_wav"),
   importWavPack: (path, name = null) => call("import_wav_pack", { path, name }),
   playPreview: (code = null, kind = "down") => call("play_preview", { code, kind }),

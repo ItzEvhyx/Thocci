@@ -49,8 +49,6 @@ export async function preloadUiIcons() {
       iconMap.set(name, svg);
     }),
   );
-  const traySvg = await loadTextAsset("./vendor/brand/tray/thocci-tray-dark.svg");
-  iconMap.set("thocci-mark", traySvg.replace(/#17181B/gi, "currentColor"));
 }
 
 export function iconMarkup(name, extraClass = "") {

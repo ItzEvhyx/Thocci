@@ -9,8 +9,9 @@ use serde::Serialize;
 
 use crate::control::send_command;
 use crate::paths::{
-    clamp_percent, ensure_state_dir, log_file, pid_file, port_file, read_pid_file, read_saved_pack,
-    read_saved_volume, remove_if_exists, write_saved_pack, write_saved_volume,
+    clamp_percent, ensure_state_dir, log_file, parse_stereo_flag, pid_file, port_file,
+    read_pid_file, read_saved_pack, read_saved_stereo, read_saved_volume, remove_if_exists,
+    write_saved_pack, write_saved_stereo, write_saved_volume,
 };
 use crate::process::{pid_is_running, spawn_detached, terminate_pid};
 use crate::soundpack::{
@@ -27,8 +28,10 @@ pub struct DaemonStatus {
     pub pid: Option<u32>,
     pub volume: u8,
     pub pack: String,
+    pub stereo: bool,
     pub saved_volume: u8,
     pub saved_pack: String,
+    pub saved_stereo: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -52,6 +55,7 @@ pub fn running_pid() -> Option<u32> {
 pub fn status() -> DaemonStatus {
     let saved_pack = read_saved_pack();
     let saved_volume = read_saved_volume();
+    let saved_stereo = read_saved_stereo();
     let Some(pid) = running_pid() else {
         return DaemonStatus {
             running: false,
@@ -59,25 +63,32 @@ pub fn status() -> DaemonStatus {
             pid: None,
             volume: saved_volume,
             pack: saved_pack.clone(),
+            stereo: saved_stereo,
             saved_volume,
             saved_pack,
+            saved_stereo,
         };
     };
 
     if let Some(reply) = send_command("status", Duration::from_secs(1)) {
-        if let Some(parsed) = parse_status_reply(&reply, pid, saved_volume, &saved_pack) {
+        if let Some(parsed) =
+            parse_status_reply(&reply, pid, saved_volume, &saved_pack, saved_stereo)
+        {
             return parsed;
         }
     }
 
+    // Do not report panning as confirmed active while a running daemon is unresponsive.
     DaemonStatus {
         running: true,
         responsive: false,
         pid: Some(pid),
         volume: saved_volume,
         pack: saved_pack.clone(),
+        stereo: false,
         saved_volume,
         saved_pack,
+        saved_stereo,
     }
 }
 
@@ -276,6 +287,33 @@ pub fn set_pack(pack_id: &str) -> Result<bool> {
     }
 }
 
+/// Save stereo keystroke panning preference and push it live to the daemon if running.
+/// Returns `(enabled, daemon_was_running)`.
+///
+/// When a daemon is running, only confirms and persists after receiving an `OK`
+/// reply so older or unresponsive daemons are never misrepresented as active.
+pub fn set_stereo(enabled: bool) -> Result<(bool, bool)> {
+    if running_pid().is_none() {
+        write_saved_stereo(enabled)?;
+        return Ok((enabled, false));
+    }
+
+    let arg = if enabled { "on" } else { "off" };
+    let reply = send_command(&format!("stereo {arg}"), Duration::from_secs(2));
+    match reply.as_deref() {
+        Some(r) if r.starts_with("OK") => {
+            write_saved_stereo(enabled)?;
+            Ok((enabled, true))
+        }
+        Some(err_reply) => Err(Error::new(format!(
+            "stereo audio update was rejected by the running engine ({err_reply}) — restart Thocci to apply"
+        ))),
+        None => Err(Error::new(
+            "stereo audio update failed because the running engine did not respond — restart Thocci and try again",
+        )),
+    }
+}
+
 pub fn list_builtin_packs() -> &'static [BuiltinPackMeta] {
     BUILTIN_PACKS
 }
@@ -289,10 +327,14 @@ fn parse_status_reply(
     pid: u32,
     fallback_volume: u8,
     fallback_pack: &str,
+    saved_stereo: bool,
 ) -> Option<DaemonStatus> {
     let rest = reply.strip_prefix("OK")?.trim();
     let mut volume = fallback_volume;
     let mut pack = fallback_pack.to_owned();
+    // An older daemon reply without `stereo=` must not be presented as confirming
+    // that stereo panning is active.
+    let mut stereo = false;
 
     for token in rest.split_whitespace() {
         if let Some(val) = token.strip_prefix("volume=") {
@@ -301,6 +343,10 @@ fn parse_status_reply(
             }
         } else if let Some(val) = token.strip_prefix("pack=") {
             pack = val.to_owned();
+        } else if let Some(val) = token.strip_prefix("stereo=") {
+            if let Some(parsed) = parse_stereo_flag(val) {
+                stereo = parsed;
+            }
         }
     }
 
@@ -310,8 +356,10 @@ fn parse_status_reply(
         pid: Some(pid),
         volume,
         pack,
+        stereo,
         saved_volume: fallback_volume,
         saved_pack: fallback_pack.to_owned(),
+        saved_stereo,
     })
 }
 
@@ -351,5 +399,70 @@ mod tests {
         assert_eq!(paths::read_saved_pack(), "creamy");
 
         let _ = std::fs::remove_dir_all(&broken_dir);
+    }
+
+    #[test]
+    fn parse_status_reply_handles_stereo_and_older_daemons_without_field() {
+        // Modern daemon explicitly confirming stereo=on
+        let on = parse_status_reply(
+            "OK running volume=80 pack=creamy stereo=on",
+            42,
+            100,
+            "cherry-mx",
+            true,
+        )
+        .expect("valid status");
+        assert!(on.stereo);
+        assert!(on.saved_stereo);
+        assert_eq!(on.volume, 80);
+        assert_eq!(on.pack, "creamy");
+
+        // Modern daemon confirming stereo=off
+        let off = parse_status_reply(
+            "OK running volume=80 pack=creamy stereo=off",
+            42,
+            100,
+            "cherry-mx",
+            true,
+        )
+        .expect("valid status");
+        assert!(!off.stereo);
+        assert!(off.saved_stereo);
+
+        // Older daemon reply omitting `stereo=` still parses cleanly and must NOT claim stereo is active
+        let legacy = parse_status_reply(
+            "OK running volume=75 pack=banana-split",
+            42,
+            100,
+            "cherry-mx",
+            true,
+        )
+        .expect("legacy status parses");
+        assert_eq!(legacy.volume, 75);
+        assert_eq!(legacy.pack, "banana-split");
+        assert!(!legacy.stereo);
+        assert!(legacy.saved_stereo);
+    }
+
+    #[test]
+    fn set_stereo_persists_when_daemon_is_stopped() {
+        let _guard = test_support::isolated_state();
+        paths::remove_if_exists(paths::pid_file());
+        paths::remove_if_exists(paths::stereo_file());
+
+        let initial = status();
+        assert!(!initial.running);
+        assert!(!initial.stereo);
+        assert!(!initial.saved_stereo);
+
+        assert_eq!(set_stereo(true).unwrap(), (true, false));
+        let after_on = status();
+        assert!(after_on.stereo);
+        assert!(after_on.saved_stereo);
+
+        assert_eq!(set_stereo(false).unwrap(), (false, false));
+        let after_off = status();
+        assert!(!after_off.stereo);
+        assert!(!after_off.saved_stereo);
     }
 }

@@ -162,7 +162,7 @@ impl ksni::Tray for LinuxTray {
             }
             .into(),
             StandardItem {
-                label: "Open Dashboard".to_owned(),
+                label: "Open Home".to_owned(),
                 activate: Box::new(|this: &mut Self| {
                     let _ = crate::show_dashboard_window(&this.app, None);
                 }),
@@ -255,8 +255,7 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
     else {
         return false;
     };
-    let Ok(dash_item) =
-        MenuItem::with_id(app, MENU_DASHBOARD, "Open Dashboard", true, None::<&str>)
+    let Ok(dash_item) = MenuItem::with_id(app, MENU_DASHBOARD, "Open Home", true, None::<&str>)
     else {
         return false;
     };

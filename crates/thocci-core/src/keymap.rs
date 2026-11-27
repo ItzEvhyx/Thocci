@@ -9,6 +9,57 @@
 /// Linux `KEY_A`: a device that reports it is treated as a keyboard.
 pub const KEY_A: u16 = 30;
 
+/// Physical horizontal stereo zone of a key on a standard keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyZone {
+    Left,
+    Center,
+    Right,
+}
+
+/// Map a normalized Linux evdev keycode to its physical stereo zone.
+///
+/// Uses an explicit position table so platform remapping and keyboard language
+/// do not alter left/center/right placement. Navigation cluster and numpad keys
+/// map to the right; unclassified keys default to center.
+pub fn key_zone(linux_code: u16) -> KeyZone {
+    match linux_code {
+        // Left: number row (` 1-4), top (Tab Q W E R), home (Caps A S D F),
+        // bottom (LShift Z X C, ISO IntlBackslash), bottom controls (LCtrl LMeta LAlt).
+        41 | 2..=5 | 15..=19 | 58 | 30..=33 | 42 | 44..=46 | 86 | 29 | 125 | 56 => KeyZone::Left,
+        // Center: number row (5-8), top (T Y U), home (G H J),
+        // bottom (V B N), bottom controls (Space).
+        6..=9 | 20..=22 | 34..=36 | 47..=49 | 57 => KeyZone::Center,
+        // Right: number row (9 0 - = Backspace), top (I O P [ ] \),
+        // home (K L ; ' Enter), bottom (M , . / RShift),
+        // right modifiers & arrows (RCtrl RAlt RMeta Menu, Up/Left/Right/Down),
+        // navigation cluster (PrintScreen ScrollLock Pause Home End PgUp PgDn Ins Del),
+        // and numpad (NumLock KP* KP7..KP. KPEnter KP/ KP=).
+        10..=14
+        | 23..=28
+        | 37..=40
+        | 43
+        | 50..=55
+        | 69..=83
+        | 96..=100
+        | 102..=111
+        | 117
+        | 119
+        | 126
+        | 127 => KeyZone::Right,
+        // Unclassified keys default to center.
+        _ => KeyZone::Center,
+    }
+}
+
+/// Map a DOM `KeyboardEvent.code` to its physical stereo zone using the shared
+/// Linux keycode table. Unrecognized or empty codes default to center.
+pub fn dom_code_zone(code: &str) -> KeyZone {
+    dom_code_to_linux(code)
+        .map(key_zone)
+        .unwrap_or(KeyZone::Center)
+}
+
 /// Keys that never click: Caps/Num/Scroll Lock and the Super/Windows/Command keys.
 pub fn is_ignored(linux_code: u16) -> bool {
     matches!(linux_code, 58 | 69 | 70 | 125 | 126)
@@ -449,5 +500,99 @@ mod tests {
             assert!(is_ignored(code));
         }
         assert!(!is_ignored(KEY_A));
+    }
+
+    #[test]
+    fn stereo_key_zones_match_spec_across_rows_and_fallbacks() {
+        // Left zone across all five rows (including ISO IntlBackslash)
+        for code in [
+            "Backquote",
+            "Digit1",
+            "Digit4",
+            "Tab",
+            "KeyQ",
+            "KeyR",
+            "CapsLock",
+            "KeyA",
+            "KeyF",
+            "ShiftLeft",
+            "KeyZ",
+            "KeyC",
+            "IntlBackslash",
+            "ControlLeft",
+            "MetaLeft",
+            "AltLeft",
+        ] {
+            assert_eq!(dom_code_zone(code), KeyZone::Left, "{code} should be Left");
+        }
+
+        // Center zone across all five rows
+        for code in [
+            "Digit5", "Digit8", "KeyT", "KeyU", "KeyG", "KeyH", "KeyJ", "KeyV", "KeyB", "KeyN",
+            "Space",
+        ] {
+            assert_eq!(
+                dom_code_zone(code),
+                KeyZone::Center,
+                "{code} should be Center"
+            );
+        }
+
+        // Right zone including modifiers, arrows, nav cluster, and numpad
+        for code in [
+            "Digit9",
+            "Digit0",
+            "Minus",
+            "Equal",
+            "Backspace",
+            "KeyI",
+            "KeyP",
+            "BracketLeft",
+            "BracketRight",
+            "Backslash",
+            "KeyK",
+            "KeyL",
+            "Semicolon",
+            "Quote",
+            "Enter",
+            "KeyM",
+            "Comma",
+            "Period",
+            "Slash",
+            "ShiftRight",
+            "ControlRight",
+            "AltRight",
+            "MetaRight",
+            "ContextMenu",
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Home",
+            "End",
+            "PageUp",
+            "PageDown",
+            "Insert",
+            "Delete",
+            "PrintScreen",
+            "Pause",
+            "Numpad0",
+            "Numpad5",
+            "NumpadEnter",
+            "NumpadAdd",
+        ] {
+            assert_eq!(
+                dom_code_zone(code),
+                KeyZone::Right,
+                "{code} should be Right"
+            );
+        }
+
+        // Unclassified & unknown keys default to Center
+        assert_eq!(dom_code_zone("Escape"), KeyZone::Center);
+        assert_eq!(dom_code_zone("F1"), KeyZone::Center);
+        assert_eq!(dom_code_zone("UnknownKey"), KeyZone::Center);
+        assert_eq!(dom_code_zone(""), KeyZone::Center);
+        assert_eq!(key_zone(999), KeyZone::Center);
     }
 }

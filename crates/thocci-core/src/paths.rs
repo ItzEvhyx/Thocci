@@ -20,6 +20,7 @@ pub const CONTROL_HOST: &str = "127.0.0.1";
 pub const CONTROL_PORT: u16 = 24732;
 
 const DEFAULT_VOLUME: u8 = 100;
+const DEFAULT_STEREO: bool = false;
 
 pub fn state_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("THOCCI_STATE_DIR").filter(|dir| !dir.is_empty()) {
@@ -65,6 +66,10 @@ pub fn volume_file() -> PathBuf {
 
 pub fn pack_file() -> PathBuf {
     state_dir().join("pack")
+}
+
+pub fn stereo_file() -> PathBuf {
+    state_dir().join("stereo")
 }
 
 pub fn port_file() -> PathBuf {
@@ -129,6 +134,26 @@ pub fn write_saved_pack(pack_id: &str) -> io::Result<()> {
         ));
     }
     write_value(pack_file(), pack_id)
+}
+
+/// Saved stereo keystroke panning preference. Defaults to `false` (off) for
+/// fresh installs, missing files, and unrecognized values.
+pub fn read_saved_stereo() -> bool {
+    read_trimmed(stereo_file())
+        .and_then(|raw| parse_stereo_flag(&raw))
+        .unwrap_or(DEFAULT_STEREO)
+}
+
+pub fn write_saved_stereo(enabled: bool) -> io::Result<()> {
+    write_value(stereo_file(), if enabled { "on" } else { "off" })
+}
+
+pub(crate) fn parse_stereo_flag(raw: &str) -> Option<bool> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "on" => Some(true),
+        "0" | "false" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 pub fn read_control_port() -> u16 {
@@ -196,5 +221,21 @@ mod tests {
         assert_eq!(read_saved_pack(), "banana-split");
         std::fs::write(pack_file(), "garbage").unwrap();
         assert_eq!(read_saved_pack(), DEFAULT_PACK_ID);
+    }
+
+    #[test]
+    fn stereo_defaults_off_and_round_trips() {
+        let _guard = test_support::isolated_state();
+        remove_if_exists(stereo_file());
+        assert!(!read_saved_stereo());
+
+        write_saved_stereo(true).unwrap();
+        assert!(read_saved_stereo());
+
+        write_saved_stereo(false).unwrap();
+        assert!(!read_saved_stereo());
+
+        std::fs::write(stereo_file(), "garbage").unwrap();
+        assert!(!read_saved_stereo());
     }
 }

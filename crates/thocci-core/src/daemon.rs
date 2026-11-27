@@ -6,12 +6,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use crate::audio::{apply_low_latency_env, AudioEngine};
+use crate::audio::{apply_low_latency_env, AudioEngine, ChannelGains};
 use crate::control::ControlServer;
 use crate::input::{create_listener, KeyEvent, KeyEventKind};
+use crate::keymap;
 use crate::paths::{
-    clamp_percent, ensure_state_dir, pid_file, read_pid_file, read_saved_pack, read_saved_volume,
-    remove_if_exists, write_saved_pack, write_saved_volume,
+    clamp_percent, ensure_state_dir, parse_stereo_flag, pid_file, read_pid_file, read_saved_pack,
+    read_saved_stereo, read_saved_volume, remove_if_exists, write_saved_pack, write_saved_stereo,
+    write_saved_volume,
 };
 use crate::process::pid_is_running;
 use crate::soundpack::Soundpack;
@@ -30,7 +32,9 @@ struct SharedState {
     pack: RwLock<Arc<Soundpack>>,
     pack_id: Mutex<String>,
     volume_percent: AtomicU8,
+    stereo: AtomicBool,
     stop: AtomicBool,
+    audio_recovery_pending: AtomicBool,
     stop_lock: Mutex<()>,
     stop_signal: Condvar,
 }
@@ -40,6 +44,34 @@ impl SharedState {
         self.stop.store(true, Ordering::Release);
         let _guard = self.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.stop_signal.notify_all();
+    }
+
+    fn request_audio_recovery(&self) {
+        self.audio_recovery_pending.store(true, Ordering::Release);
+        let _guard = self.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.stop_signal.notify_all();
+    }
+
+    fn sync_pack_sample_rate(&self) {
+        let target_rate = self.audio.sample_rate();
+        let current_pack = {
+            let guard = self.pack.read().unwrap_or_else(|e| e.into_inner());
+            Arc::clone(&guard)
+        };
+        if current_pack.sample_rate() == Some(target_rate) {
+            return;
+        }
+        let resampled = Arc::new(current_pack.resampled_to(target_rate));
+        let mut guard = self.pack.write().unwrap_or_else(|e| e.into_inner());
+        // Only swap if the pack wasn't switched concurrently to a different pack.
+        if guard.info().id == resampled.info().id && guard.sample_rate() != Some(target_rate) {
+            *guard = resampled;
+            log::info!(
+                "Resampled active soundpack '{}' to {} Hz for new output device",
+                guard.info().name,
+                target_rate,
+            );
+        }
     }
 
     fn handle_command(&self, raw: &str) -> String {
@@ -54,21 +86,38 @@ impl SharedState {
             "ping" => "OK pong".to_owned(),
             "status" => {
                 let vol = self.volume_percent.load(Ordering::Relaxed);
+                let stereo = if self.stereo.load(Ordering::Acquire) {
+                    "on"
+                } else {
+                    "off"
+                };
                 let pack = self
                     .pack_id
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .clone();
-                format!("OK running volume={vol} pack={pack}")
+                format!("OK running volume={vol} pack={pack} stereo={stereo}")
             }
             "volume" => self.cmd_volume(parts.next()),
             "pack" => self.cmd_pack(parts.next()),
+            "stereo" => self.cmd_stereo(parts.next()),
             "stop" => {
                 self.request_stop();
                 "OK stopping".to_owned()
             }
             other => format!("ERR unknown:{other}"),
         }
+    }
+
+    fn cmd_stereo(&self, arg: Option<&str>) -> String {
+        let Some(enabled) = arg.and_then(parse_stereo_flag) else {
+            return "ERR stereo must be on or off".to_owned();
+        };
+        self.stereo.store(enabled, Ordering::Release);
+        let _ = write_saved_stereo(enabled);
+        let label = if enabled { "on" } else { "off" };
+        log::info!("Stereo keystroke panning set to {label}");
+        format!("OK stereo={label}")
     }
 
     fn cmd_volume(&self, arg: Option<&str>) -> String {
@@ -124,11 +173,13 @@ impl SharedState {
         else {
             return;
         };
+        let stereo_enabled = self.stereo.load(Ordering::Acquire);
+        let gains = ChannelGains::for_zone(keymap::key_zone(event.code), stereo_enabled);
         match event.kind {
-            KeyEventKind::Down => self.audio.play_clip(&sound.down),
+            KeyEventKind::Down => self.audio.play_clip_with_gains(&sound.down, gains),
             KeyEventKind::Up => {
                 if let Some(release) = &sound.up {
-                    self.audio.play_clip(release);
+                    self.audio.play_clip_with_gains(release, gains);
                 }
             }
         }
@@ -150,29 +201,44 @@ pub fn run_daemon(config: DaemonConfig) -> Result<()> {
 
 fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
     let volume_percent = config.volume.unwrap_or_else(read_saved_volume).min(100);
+    // Decode the initial soundpack BEFORE opening the live audio stream so OGG/WAV
+    // decoding never starves a freshly opened Bluetooth/headphone stream with xruns.
+    let preferred_rate = AudioEngine::preferred_sample_rate();
+    let (mut pack, pack_id) = load_initial_pack(&config, preferred_rate)?;
+
     let audio = AudioEngine::new(f32::from(volume_percent) / 100.0);
     audio.init()?;
-
-    let target_rate = Some(audio.sample_rate());
-    let (pack, pack_id) = load_initial_pack(&config, target_rate)?;
+    let active_rate = audio.sample_rate();
+    if pack.sample_rate() != Some(active_rate) {
+        pack = pack.resampled_to(active_rate);
+    }
     audio.reset_watchdog();
     log::info!(
-        "Loaded soundpack '{}' ({}, {} keys) at volume {}%",
+        "Loaded soundpack '{}' ({}, {} keys, {} Hz) at volume {}%",
         pack.info().name,
         pack_id,
         pack.key_count(),
+        active_rate,
         volume_percent,
     );
 
+    let stereo_enabled = read_saved_stereo();
     let state = Arc::new(SharedState {
         audio,
         pack: RwLock::new(Arc::new(pack)),
         pack_id: Mutex::new(pack_id),
         volume_percent: AtomicU8::new(volume_percent),
+        stereo: AtomicBool::new(stereo_enabled),
         stop: AtomicBool::new(false),
+        audio_recovery_pending: AtomicBool::new(false),
         stop_lock: Mutex::new(()),
         stop_signal: Condvar::new(),
     });
+
+    let wake_state = Arc::clone(&state);
+    state
+        .audio
+        .set_recovery_notifier(Arc::new(move || wake_state.request_audio_recovery()));
 
     install_signal_handler(Arc::clone(&state));
 
@@ -187,10 +253,13 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
     let mut last_device_check = Instant::now();
     let mut stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
     while !state.stop.load(Ordering::Acquire) {
+        let recovery_requested = state.audio_recovery_pending.swap(false, Ordering::AcqRel);
         let remaining = check_interval.saturating_sub(last_device_check.elapsed());
-        if remaining.is_zero() {
+        if recovery_requested || remaining.is_zero() {
             drop(stop_guard);
-            state.audio.check_device_change();
+            if state.audio.check_device_change() {
+                state.sync_pack_sample_rate();
+            }
             last_device_check = Instant::now();
             stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
             continue;

@@ -1,4 +1,4 @@
-# ![Thocci beside a titanium Escape key and an exploded mechanical switch](assets/readme/thocci-hero-monochrome.webp)
+# ![Thocci wordmark beside the mascot on a titanium Escape key and an exploded mechanical switch](assets/readme/thocci-readme-wordmark.webp)
 
 <p align="center">
   <strong>Give your keyboard a sound of its own.</strong><br>
@@ -18,22 +18,26 @@ Soft linear taps, crisp clicks, or a classic typewriter. Pick from 41 built-in s
 
 ### Play every key
 
-![Thocci's dark Home dashboard with playback controls, the mascot, and an on-screen keyboard](assets/readme/thocci-dashboard-dark.png)
+![Thocci’s Home screen in light mode with Stereo audio enabled beneath Animate Thocci](assets/readme/thocci-dashboard-light.png)
 
 Adjust volume, type or click any key to audition the active soundpack, and try a 20-second typing challenge.
 
-<details>
-<summary>See Home in light mode</summary>
+### Hear where you type
 
-![Thocci's light Home dashboard with the same playback, mascot, and keyboard controls](assets/readme/thocci-dashboard-light.png)
-
-</details>
+Turn on **Stereo audio** under **App**, just below **Animate Thocci**. On stereo headphones or speakers, `A` sounds stronger on the left, `G` and `H` stay centered, and `L` sounds stronger on the right. It works as you type in other apps and when you audition keys in Home. Stereo audio is off by default.
 
 ### Find your sound
 
-![Thocci's light dashboard with the Soundpacks browser open and AULA F75 Max selected](assets/readme/thocci-soundpacks-light.png)
+![Thocci’s Soundpacks browser in light mode with Cherry MX Black selected](assets/readme/thocci-soundpacks-light.png)
 
 Search the built-in library and switch packs live. Try the Reaper switches from the AULA F75 Max, the softer Creamy pack, or your own WAV.
+
+<details>
+<summary>See Soundpacks in dark mode</summary>
+
+![Thocci’s Soundpacks browser in dark mode with Cherry MX Black selected](assets/readme/thocci-soundpacks-dark.png)
+
+</details>
 
 ### Quick Actions
 
@@ -41,7 +45,7 @@ Search the built-in library and switch packs live. Try the Reaper switches from 
   <img src="assets/readme/thocci-quick-actions.png" width="288" alt="Thocci's Quick Actions panel with a playback key, a Settings key, and the SWITCHES shortcut">
 </p>
 
-Toggle playback from the tray or menu bar, open Settings, or jump straight to Soundpacks with **SWITCHES**. On Linux, open Quick Actions from the tray menu or from the dashboard on desktops without a tray host.
+Toggle playback from the tray or menu bar, open Settings, or jump straight to Soundpacks with **SWITCHES**. On Linux, open Quick Actions from the tray menu or from Home on desktops without a tray host.
 
 ## Installation
 

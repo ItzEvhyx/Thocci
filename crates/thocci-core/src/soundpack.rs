@@ -765,6 +765,73 @@ impl Soundpack {
         &self.info
     }
 
+    /// Sample rate of the loaded clips in this pack, if non-empty.
+    pub fn sample_rate(&self) -> Option<u32> {
+        self.fallback
+            .as_ref()
+            .or_else(|| self.linux_keys.values().next())
+            .or_else(|| self.uiohook_keys.values().next())
+            .map(|sound| sound.down.sample_rate)
+    }
+
+    /// Return a copy of this soundpack resampled in memory to `target_rate`.
+    ///
+    /// Shared sample buffers (e.g. v1 multi-file packs reusing one clip across
+    /// keys) are resampled once and deduplicated by source pointer.
+    pub fn resampled_to(&self, target_rate: u32) -> Self {
+        let mut cache: HashMap<(usize, usize, u32), Arc<[f32]>> = HashMap::new();
+        let mut resample_clip = |clip: &SoundClip| -> SoundClip {
+            if clip.sample_rate == target_rate || target_rate == 0 {
+                return clip.clone();
+            }
+            let key = (
+                clip.samples.as_ptr() as usize,
+                clip.samples.len(),
+                clip.sample_rate,
+            );
+            let samples = cache
+                .entry(key)
+                .or_insert_with(|| {
+                    Arc::from(resample_stereo(
+                        &clip.samples,
+                        clip.sample_rate,
+                        target_rate,
+                    ))
+                })
+                .clone();
+            SoundClip {
+                samples,
+                sample_rate: target_rate,
+            }
+        };
+
+        let mut resample_sound = |sound: &KeySound| -> KeySound {
+            KeySound {
+                down: resample_clip(&sound.down),
+                up: sound.up.as_ref().map(&mut resample_clip),
+            }
+        };
+
+        let linux_keys = self
+            .linux_keys
+            .iter()
+            .map(|(&code, sound)| (code, resample_sound(sound)))
+            .collect();
+        let uiohook_keys = self
+            .uiohook_keys
+            .iter()
+            .map(|(&code, sound)| (code, resample_sound(sound)))
+            .collect();
+        let fallback = self.fallback.as_ref().map(resample_sound);
+
+        Self {
+            info: self.info.clone(),
+            linux_keys,
+            uiohook_keys,
+            fallback,
+        }
+    }
+
     pub fn key_count(&self) -> usize {
         if !self.linux_keys.is_empty() {
             self.linux_keys.len()
@@ -1195,6 +1262,20 @@ mod tests {
         assert!(pack.clip_for_linux_key(103).is_some()); // Up
         assert!(pack.clip_for_linux_key(111).is_some()); // Delete
         assert!(pack.clip_for_linux_key(96).is_some()); // KP Enter
+    }
+
+    #[test]
+    fn resamples_loaded_pack_to_new_device_rate() {
+        let pack_48k = Soundpack::load_builtin("orange-deluxe", Some(48_000)).unwrap();
+        assert_eq!(pack_48k.sample_rate(), Some(48_000));
+
+        let pack_16k = pack_48k.resampled_to(16_000);
+        assert_eq!(pack_16k.sample_rate(), Some(16_000));
+        let sound_48k = pack_48k.sound_for_linux_key(keymap::KEY_A).unwrap();
+        let sound_16k = pack_16k.sound_for_linux_key(keymap::KEY_A).unwrap();
+        assert_eq!(sound_16k.down.sample_rate, 16_000);
+        assert!(sound_16k.down.samples.len() < sound_48k.down.samples.len());
+        assert_eq!(sound_16k.up.as_ref().unwrap().sample_rate, 16_000);
     }
 
     #[test]

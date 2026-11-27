@@ -36,7 +36,7 @@ export async function mountOnboarding(root, { onComplete }) {
         <img src="./vendor/illustrations/onboarding.svg" alt="Thocci perched on a black spacebar between Command and K keycaps" draggable="false" />
       </div>
       <div class="onboarding-copy" data-tauri-drag-region>
-        <h1 class="onboarding-title">Welcome to Thocci</h1>
+        <h1 class="onboarding-title">Welcome to <img class="onboarding-wordmark" src="./vendor/brand/thocci-wordmark.svg" width="388" height="99" alt="Thocci" draggable="false" /></h1>
         <p class="onboarding-tagline">Thocci - the keyboard you can hear.</p>
         <button id="onboardingGetStarted" type="button" class="onboarding-cta">
           <span>Get started</span>

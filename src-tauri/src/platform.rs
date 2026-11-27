@@ -120,7 +120,7 @@ pub fn collect_platform_info(tray_available: bool, daemon_exe: &Path) -> Platfor
             permission_steps: vec![
                 "Thocci reads physical keystrokes via /dev/input/event* (evdev) on both X11 and Wayland.".to_owned(),
                 "Grant access once by adding your user to the input group: sudo usermod -aG input \"$USER\"".to_owned(),
-                "Log out and sign back in, then toggle Enable Thocci in the dashboard or run `thocci on`.".to_owned(),
+                "Log out and sign back in, then toggle Enable Thocci on the Home screen or run `thocci on`.".to_owned(),
             ],
         }
     }
