@@ -403,16 +403,19 @@ body[data-layer-backdrop="true"] .qa-shell {
 
 .qa-status-wrap {
   position: absolute;
-  left: 79px;
+  left: 73px;
   top: 15px;
-  width: 132px;
+  width: 142px;
   height: 42px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
+  text-align: center;
 }
 
 .qa-status-text {
+  max-width: 100%;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
@@ -423,6 +426,7 @@ body[data-layer-backdrop="true"] .qa-shell {
 }
 
 .qa-status-sub {
+  max-width: 100%;
   margin-top: 2px;
   font-size: 11px;
   line-height: 1.15;
@@ -603,6 +607,7 @@ body[data-layer-backdrop="true"] .qa-shell {
 #browseSoundpacksBtn,
 #importWavBtn,
 #animateRow,
+.sidebar-trinket,
 #themeToggleBtn,
 #challengeTriggerBtn,
 .workspace-heading-group,
@@ -618,6 +623,7 @@ body[data-layer-backdrop="true"] .qa-shell {
 .dashboard-shell[data-thocci-enabled="false"] #browseSoundpacksBtn,
 .dashboard-shell[data-thocci-enabled="false"] #importWavBtn,
 .dashboard-shell[data-thocci-enabled="false"] #animateRow,
+.dashboard-shell[data-thocci-enabled="false"] .sidebar-trinket,
 .dashboard-shell[data-thocci-enabled="false"] #themeToggleBtn,
 .dashboard-shell[data-thocci-enabled="false"] #challengeTriggerBtn,
 .dashboard-shell[data-thocci-enabled="false"] .workspace-heading-group,
@@ -1170,29 +1176,43 @@ body[data-layer-backdrop="true"] .qa-shell {
 
 .sidebar-footer {
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  pointer-events: none;
+  user-select: none;
 }
 
-.sidebar-fallback-btn {
+.sidebar-trinket {
   width: 100%;
-  border-radius: 10px;
-  border: 1px dashed var(--border-rim);
-  background: transparent;
-  color: var(--text-muted);
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: center;
-  transition: background-color 120ms ease, color 120ms ease;
+  max-width: 214px;
+  pointer-events: none;
+  user-select: none;
 }
 
-.sidebar-fallback-btn:hover {
-  background: var(--bg-raised);
-  color: var(--text-primary);
+.sidebar-trinket-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.sidebar-trinket [data-trinket-key-light] {
+  filter: var(--kb-pressed-glow);
+}
+
+.sidebar-trinket .trinket-eyes-closed,
+.sidebar-trinket .trinket-eyes-squint,
+.sidebar-trinket [data-expression="land"] .trinket-eyes-open,
+.sidebar-trinket [data-expression="blink"] .trinket-eyes-open {
+  display: none;
+}
+
+.sidebar-trinket [data-expression="land"] .trinket-eyes-squint,
+.sidebar-trinket [data-expression="blink"] .trinket-eyes-closed {
+  display: inline;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -2549,15 +2569,33 @@ body[data-layer-backdrop="true"] .qa-shell {
   }
 
   .sidebar-pane {
-    padding: 14px 12px 12px;
+    padding: 12px 12px 10px;
   }
 
   .sidebar-brand {
-    padding: 0 2px 12px;
+    padding: 0 2px 10px;
   }
 
   .sidebar-group {
-    margin-top: 12px;
+    margin-top: 9px;
+    gap: 6px;
+  }
+
+  .sidebar-row {
+    padding: 8px 11px;
+  }
+
+  .sidebar-row--volume {
+    padding: 9px 11px 10px;
+    gap: 8px;
+  }
+
+  .sidebar-footer {
+    padding-top: 6px;
+  }
+
+  .sidebar-trinket {
+    max-width: 184px;
   }
 
   .workspace {
@@ -2605,6 +2643,14 @@ body[data-layer-backdrop="true"] .qa-shell {
   .sidebar-row--volume {
     padding: 9px 10px 10px;
     gap: 8px;
+  }
+
+  .sidebar-footer {
+    padding-top: 6px;
+  }
+
+  .sidebar-trinket {
+    max-width: 168px;
   }
 }
 

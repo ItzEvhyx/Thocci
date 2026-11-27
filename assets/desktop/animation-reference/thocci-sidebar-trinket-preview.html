@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thocci sidebar trinket preview</title>
+<link rel="stylesheet" href="../../../ui/styles/tokens.css">
+<style>
+  html { color-scheme: light dark; background: light-dark(#fff, #111112); }
+  body { max-width: 760px; margin: 0 auto; padding: 16px; }
+</style>
+<script>
+  const systemDark = matchMedia("(prefers-color-scheme: dark)");
+  function syncPreviewTheme() {
+    document.documentElement.dataset.theme = systemDark.matches ? "dark" : "light";
+  }
+  syncPreviewTheme();
+  systemDark.addEventListener("change", syncPreviewTheme);
+</script>
+</head>
+<body>
+<section id="thocci-keycap-preview" class="viz-dotted-background" aria-label="Thocci sidebar animation preview">
+  <div class="thocci-preview-layout">
+    <aside class="thocci-sidebar" aria-label="Sidebar mockup">
+      <div class="thocci-setup"><i data-lucide="book-open" aria-hidden="true"></i><span>Setup guide</span></div>
+      <svg class="thocci-stage" viewBox="0 0 192 142" role="img" aria-label="Side view of Thocci hopping across three mechanical keycaps. Each key sinks into the keyboard and lights up on impact.">
+        <defs>
+          <linearGradient id="thocci-cap-side" x1=".18" y1="0" x2=".44" y2="1">
+            <stop stop-color="#53545d"/><stop offset=".28" stop-color="#3b3c43"/><stop offset=".78" stop-color="#292a30"/><stop offset="1" stop-color="#18191f"/>
+          </linearGradient>
+          <radialGradient id="thocci-impact-halo">
+            <stop stop-color="var(--preview-pressed-rim)" stop-opacity=".65"/><stop offset="1" stop-color="var(--preview-pressed-rim)" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="thocci-deck-side" x2="0" y2="1">
+            <stop stop-color="#3c3d45"/><stop offset=".26" stop-color="#292a30"/><stop offset="1" stop-color="#1b1c21"/>
+          </linearGradient>
+          <clipPath id="thocci-deck-clip" clipPathUnits="userSpaceOnUse">
+            <rect x="-30" y="60" width="60" height="61"/>
+          </clipPath>
+          <path id="thocci-cap-profile" d="M-17.8 88.5C-10.6 88.5-4.5 92.5 4 92.8C9.1 93 13.7 92.1 17.2 91Q20.5 89.9 21.4 93.5L27.3 113.9Q28.3 117.8 24.6 117.8H-24.7Q-28.2 117.8-27.4 114L-22.2 93.3Q-21.1 88.5-17.8 88.5Z"/>
+          <path id="thocci-cap-ridge" d="M-17.5 88.9C-10.6 89-4.4 92.9 4 93.2C9.1 93.4 13.7 92.4 17.3 91.4Q19.8 90.6 21 93.8" fill="none" stroke-linecap="round"/>
+          <g id="thocci-cap-art">
+            <use href="#thocci-cap-profile" fill="url(#thocci-cap-side)" stroke="#50515b" stroke-width=".75"/>
+            <use href="#thocci-cap-ridge" stroke="#90929e" stroke-opacity=".78" stroke-width=".8"/>
+            <path d="M-21.6 95.7-26.1 114.1M-23.7 116.5H24" fill="none" stroke="#9396a3" stroke-opacity=".18" stroke-width=".75" stroke-linecap="round"/>
+          </g>
+          <g id="thocci-lit-cap">
+            <use href="#thocci-cap-profile" fill="var(--preview-pressed)" stroke="var(--preview-pressed-rim)" stroke-width=".75"/>
+            <use href="#thocci-cap-ridge" stroke="var(--preview-pressed-rim)" stroke-width="1.1"/>
+          </g>
+        </defs>
+        <ellipse cx="96" cy="132" rx="89" ry="4" fill="#08080b" opacity=".56"/>
+        <path d="M5 120H187V125H5Z" fill="#0c0c0f"/>
+        <ellipse data-glow cx="96" cy="121" rx="32" ry="8" fill="url(#thocci-impact-halo)" opacity="0"/>
+        <g data-switch="34" transform="translate(34 0)" clip-path="url(#thocci-deck-clip)">
+          <g data-key transform="translate(0 0)"><use href="#thocci-cap-art"/><use data-key-light href="#thocci-lit-cap" opacity="0"/></g>
+        </g>
+        <g data-switch="96" transform="translate(96 0)" clip-path="url(#thocci-deck-clip)">
+          <g data-key transform="translate(0 0)"><use href="#thocci-cap-art"/><use data-key-light href="#thocci-lit-cap" opacity="0"/></g>
+        </g>
+        <g data-switch="158" transform="translate(158 0)" clip-path="url(#thocci-deck-clip)">
+          <g data-key transform="translate(0 0)"><use href="#thocci-cap-art"/><use data-key-light href="#thocci-lit-cap" opacity="0"/></g>
+        </g>
+        <path d="M5 121H187V127Q187 131 183 131H9Q5 131 5 127Z" fill="url(#thocci-deck-side)" stroke="#303138" stroke-width=".7"/>
+        <path d="M8.5 121.5H183.5" stroke="#6c6e7b" stroke-opacity=".46" stroke-width=".85" stroke-linecap="round"/>
+        <g data-impact aria-hidden="true" opacity="0">
+          <g data-hit-left fill="none" stroke="var(--preview-pressed-rim)" stroke-width="1.55" stroke-linecap="round">
+            <path d="M-22-4l-5-3m4 1-2-5"/><circle cx="-28" cy="-1" r=".8" fill="var(--preview-pressed-rim)" stroke="none"/>
+          </g>
+          <g data-hit-right fill="none" stroke="var(--preview-pressed-rim)" stroke-width="1.55" stroke-linecap="round">
+            <path d="M22-4l5-3m-4 1 2-5"/><circle cx="28" cy="-1" r=".8" fill="var(--preview-pressed-rim)" stroke="none"/>
+          </g>
+        </g>
+        <ellipse data-shadow cx="96" cy="93" rx="17" ry="3" fill="#111116" opacity=".55"/>
+        <g data-cat transform="translate(96 93) scale(.285) translate(-80 -119)">
+          <path d="M14 106C5 100 0 90 0 79c0-12 5-24 13-35l13-27c3-7 11-8 15-2l9 12c12-6 26-10 43-10l19-14c6-5 13-3 16 3l24 43c5 10 8 20 8 31 0 13-6 24-17 29-17 7-39 10-63 10-26 0-51-3-66-13Z" fill="#17181b" stroke="#606069" stroke-width="2.4"/>
+          <g data-face>
+            <g class="thocci-eyes-open" fill="#fdfdff">
+              <rect x="76" y="49" width="11" height="20" rx="5.5"/>
+              <rect x="97" y="48" width="11" height="20" rx="5.5"/>
+            </g>
+            <path class="thocci-eyes-squint" d="m76 63 6-6 6 6m9 0 6-6 6 6" fill="none" stroke="#fdfdff" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path class="thocci-eyes-closed" d="M78 56c3 5 7 5 10 0m10 0c3 5 7 5 10 0" fill="none" stroke="#fdfdff" stroke-width="3.8" stroke-linecap="round"/>
+          </g>
+        </g>
+      </svg>
+    </aside>
+    <div class="thocci-preview-input">
+      <label for="thocci-typing-test">Type to test</label>
+      <input id="thocci-typing-test" type="text" placeholder="Type a few words…" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</section>
+<style>
+  #thocci-keycap-preview {
+    color-scheme: light dark;
+    /* The local reference loads Thocci's stylesheet. The inline preview uses the same values. */
+    --preview-pressed: var(--kb-pressed, light-dark(#4361cd, #3a3b42));
+    --preview-pressed-rim: var(--kb-pressed-rim, light-dark(#3852b6, #d8dae4));
+    --preview-glow-fallback: none;
+    border-radius: 12px;
+    padding: 24px 16px;
+    font-family: system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    #thocci-keycap-preview { --preview-glow-fallback: drop-shadow(0 0 5px rgba(255, 255, 255, .26)); }
+  }
+  #thocci-keycap-preview .thocci-preview-layout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 20px clamp(20px, 5vw, 44px);
+  }
+  #thocci-keycap-preview .thocci-sidebar {
+    box-sizing: border-box;
+    flex: 0 0 196px;
+    min-height: 228px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 10px;
+    background: var(--bg-sidebar, light-dark(#f3f5fa, #181819));
+    border: 1px solid var(--border-rim, light-dark(#d7deeb, #343436));
+    border-radius: 15px;
+    box-shadow: 0 10px 24px #0002;
+    color: var(--text-primary, light-dark(#17181d, #f5f5f5));
+  }
+  #thocci-keycap-preview .thocci-setup {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 30px;
+    padding-inline: 9px;
+    background: var(--bg-raised, light-dark(#fff, #212122));
+    border: 1px solid var(--border-rim, light-dark(#d7deeb, #343436));
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 550;
+  }
+  #thocci-keycap-preview .thocci-setup svg { width: 12px; height: 12px; color: var(--icon-color, light-dark(#4d5260, #b0b0b2)); }
+  #thocci-keycap-preview .thocci-stage { display: block; width: 100%; overflow: visible; }
+  #thocci-keycap-preview [data-key-light] { filter: var(--kb-pressed-glow, var(--preview-glow-fallback)); }
+  #thocci-keycap-preview .thocci-eyes-closed,
+  #thocci-keycap-preview .thocci-eyes-squint,
+  #thocci-keycap-preview [data-expression="land"] .thocci-eyes-open,
+  #thocci-keycap-preview [data-expression="blink"] .thocci-eyes-open { display: none; }
+  #thocci-keycap-preview [data-expression="land"] .thocci-eyes-squint,
+  #thocci-keycap-preview [data-expression="blink"] .thocci-eyes-closed { display: inline; }
+  #thocci-keycap-preview .thocci-preview-input {
+    display: grid;
+    gap: 8px;
+    width: min(100%, 224px);
+    color: light-dark(#222127, #eae9ef);
+  }
+  #thocci-keycap-preview .thocci-preview-input label { font-size: 13px; font-weight: 550; }
+  #thocci-keycap-preview .thocci-preview-input input {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 12px;
+    font: 16px system-ui, sans-serif;
+    color: inherit;
+    background: light-dark(#fff, #202024);
+    border: 1px solid light-dark(#bdbbc3, #494850);
+    border-radius: 8px;
+  }
+  #thocci-keycap-preview .thocci-preview-input input::placeholder { color: light-dark(#66636f, #a9a6b1); }
+</style>
+<script>
+(() => {
+  const root = document.getElementById("thocci-keycap-preview");
+  const input = root.querySelector("input");
+  const cat = root.querySelector("[data-cat]");
+  const face = cat.querySelector("[data-face]");
+  const shadow = root.querySelector("[data-shadow]");
+  const glow = root.querySelector("[data-glow]");
+  const impact = root.querySelector("[data-impact]");
+  const leftMarks = impact.querySelector("[data-hit-left]");
+  const rightMarks = impact.querySelector("[data-hit-right]");
+  const keys = Array.from(root.querySelectorAll("[data-switch]"), socket => ({
+    x: Number(socket.dataset.switch),
+    cap: socket.querySelector("[data-key]"),
+    light: socket.querySelector("[data-key-light]")
+  }));
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const perch = 93;
+  const switchTravel = 10.5;
+  const cadenceReset = 720;
+  const pressDuration = 218;
+  let currentKey = 1;
+  let hopping = false;
+  let pendingHop = false;
+  let blinkTimer;
+  let lastInputAt = -Infinity;
+  let typingInterval = Infinity;
+
+  function pose(x, y, stretch = 1, squash = 1, tilt = 0) {
+    cat.setAttribute("transform", `translate(${x} ${y}) rotate(${tilt}) scale(${.285 * stretch} ${.285 * squash}) translate(-80 -119)`);
+  }
+
+  function placeShadow(x, lift = 0, travel = 0) {
+    shadow.setAttribute("cx", x);
+    shadow.setAttribute("cy", perch + travel);
+    shadow.setAttribute("rx", 17 - lift * .15);
+    shadow.setAttribute("opacity", Math.max(.04, .55 - lift * .014));
+  }
+
+  const clamp = value => Math.min(1, Math.max(0, value));
+
+  function hopSpeed(now) {
+    const cadence = clamp((430 - typingInterval) / 335);
+    const recency = 1 - clamp((now - lastInputAt - 340) / (cadenceReset - 340));
+    return 1 + 1.45 * cadence * recency;
+  }
+
+  function drawPress(key, age, reduced) {
+    const down = clamp(age / 40);
+    const up = clamp((age - 86) / 98);
+    const travel = switchTravel * (1 - (1 - down) ** 2) * (.5 + .5 * Math.cos(up * Math.PI));
+    const highlight = 1 - clamp((age - 86) / 132);
+    key.cap.setAttribute("transform", `translate(0 ${travel})`);
+    key.light.setAttribute("opacity", highlight * (.74 + .26 * travel / switchTravel));
+    glow.setAttribute("cx", key.x);
+    glow.setAttribute("opacity", highlight * (.28 + .56 * travel / switchTravel));
+    pose(key.x, perch + travel, reduced ? 1 : 1 + travel * .014, reduced ? 1 : 1 - travel * .022);
+    placeShadow(key.x, 0, travel);
+    face.dataset.expression = age < 105 ? "land" : "open";
+
+    if (!reduced) {
+      const spread = clamp(age / 145);
+      const drift = 9 * (1 - (1 - spread) ** 2);
+      impact.setAttribute("opacity", (1 - spread) ** 1.4);
+      impact.setAttribute("transform", `translate(${key.x} ${perch + 1 + travel * .22 - drift * .65})`);
+      leftMarks.setAttribute("transform", `translate(${-drift} 0)`);
+      rightMarks.setAttribute("transform", `translate(${drift} 0)`);
+    }
+  }
+
+  function scheduleBlink() {
+    if (reducedMotion.matches) return;
+    blinkTimer = setTimeout(() => {
+      if (hopping || reducedMotion.matches) return;
+      face.dataset.expression = "blink";
+      blinkTimer = setTimeout(() => {
+        face.dataset.expression = "open";
+        scheduleBlink();
+      }, 125);
+    }, 2500 + Math.random() * 2100);
+  }
+
+  function hop() {
+    clearTimeout(blinkTimer);
+    hopping = true;
+    face.dataset.expression = "open";
+    const nextKey = (currentKey + (Math.random() < .5 ? 1 : 2)) % keys.length;
+    const from = keys[currentKey].x;
+    const to = keys[nextKey].x;
+    const distance = to - from;
+    const acrossTwoKeys = Math.abs(distance) > 70;
+    const height = acrossTwoKeys ? 36 : 26;
+    const still = reducedMotion.matches;
+    const launch = still ? 0 : 44;
+    const flight = still ? 0 : acrossTwoKeys ? 245 : 202;
+    const landing = launch + flight;
+    const recovery = still ? 145 : pressDuration;
+    let lastFrame = performance.now();
+    let elapsed = 0;
+
+    function frame(now) {
+      const speed = hopSpeed(now);
+      elapsed += Math.max(0, now - lastFrame) * (still ? Math.min(speed, 1.55) : speed);
+      lastFrame = Math.max(lastFrame, now);
+      if (elapsed < launch) {
+        const p = elapsed / launch;
+        const bend = Math.sin(p * Math.PI);
+        pose(from, perch, 1 + bend * .085, 1 - bend * .17);
+        placeShadow(from);
+      } else if (elapsed < landing) {
+        const p = (elapsed - launch) / flight;
+        const x = from + distance * p;
+        const lift = 4 * height * p * (1 - p);
+        pose(x, perch - lift, .98, 1 + .13 * Math.sin(p * Math.PI), Math.sign(distance) * 12 * Math.sin(2 * Math.PI * p));
+        placeShadow(x, lift);
+      } else {
+        const age = clamp((elapsed - landing) / recovery) * pressDuration;
+        drawPress(keys[nextKey], age, still);
+      }
+
+      if (elapsed < landing + recovery) {
+        requestAnimationFrame(frame);
+        return;
+      }
+      currentKey = nextKey;
+      hopping = false;
+      if (pendingHop) {
+        pendingHop = false;
+        hop();
+      } else {
+        scheduleBlink();
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  input.addEventListener("input", event => {
+    if (event.isComposing) return;
+    const now = performance.now();
+    const gap = now - lastInputAt;
+    if (gap >= cadenceReset) {
+      typingInterval = Infinity;
+    } else {
+      typingInterval = Number.isFinite(typingInterval) ? .3 * typingInterval + .7 * gap : gap;
+    }
+    lastInputAt = now;
+
+    if (hopping) {
+      pendingHop = true;
+      return;
+    }
+    hop();
+  });
+  scheduleBlink();
+})();
+</script>
+</body>
+</html>

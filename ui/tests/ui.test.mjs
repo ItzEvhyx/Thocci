@@ -12,6 +12,12 @@ import {
 } from "../src/dashboard.js";
 import { computeQuickActionsGaze } from "../src/quick-actions.js";
 import {
+  TRINKET_CADENCE_RESET_MS,
+  TRINKET_KEY_POSITIONS,
+  TRINKET_PERCH_Y,
+  createSidebarTrinketController,
+} from "../src/sidebar-trinket.js";
+import {
   STAGE_CORNERS,
   STAGE_GAMES,
   STAGE_PHRASES,
@@ -346,4 +352,114 @@ test("Quick Actions gaze tracks cursor expressively while staying inside Ink sil
 
   const farDown = computeQuickActionsGaze(0, 400);
   assert.ok(farDown.eyeY > 8 && farDown.eyeY <= 9.5, `down gaze=${farDown.eyeY}`);
+});
+
+test("sidebar trinket hops to varied keys, depresses one cap at contact, accelerates on burst, and resets after pause", () => {
+  // Deterministic alternating choices so hops cover all three keycaps
+  const picks = [0.2, 0.8, 0.2, 0.8, 0.2, 0.8, 0.2, 0.8];
+  let pickIdx = 0;
+  const ctrl = createSidebarTrinketController({
+    random: () => picks[pickIdx++ % picks.length],
+  });
+
+  // Starts idle on the middle keycap (index 1, x=96)
+  const initial = ctrl.buildRestingFrame();
+  assert.equal(initial.currentKey, 1);
+  assert.equal(initial.cat.x, TRINKET_KEY_POSITIONS[1]);
+  assert.equal(initial.cat.y, TRINKET_PERCH_Y);
+  assert.equal(initial.keys.every((k) => k.travel === 0 && k.lightOpacity === 0), true);
+
+  // Single keystroke triggers crouch -> airborne arc -> contact depression of exactly one target key
+  assert.equal(ctrl.triggerKeystroke(1000), true);
+  assert.equal(ctrl.getState(1000).speed, 1);
+
+  const crouch = ctrl.step(1020);
+  assert.equal(crouch.hopping, true);
+  assert.ok(crouch.cat.squash < 1, "crouch should squash before launch");
+  assert.equal(crouch.keys.every((k) => k.travel === 0), true);
+
+  const airborne = ctrl.step(1150);
+  assert.ok(airborne.cat.y < TRINKET_PERCH_Y - 15, "cat should rise into hop arc");
+  assert.equal(airborne.keys.every((k) => k.travel === 0), true);
+
+  const contact = ctrl.step(1300);
+  assert.equal(contact.expression, "land");
+  assert.notEqual(contact.activeKeyIndex, 1, "must land on one of the other two keycaps");
+  const litKeys = contact.keys.filter((k) => k.travel > 0 && k.lightOpacity > 0);
+  assert.equal(litKeys.length, 1, "only target landing cap should depress and highlight");
+  assert.ok(contact.cat.y > TRINKET_PERCH_Y, "cat baseline should move down with depressed cap");
+  assert.ok(contact.impact.opacity > 0, "impact marks should flare at contact");
+
+  // Settle cleanly back to resting on the landed keycap
+  const settled = ctrl.step(1600);
+  assert.equal(settled.hopping, false);
+  assert.equal(settled.currentKey, contact.activeKeyIndex);
+  assert.equal(settled.keys.every((k) => k.travel === 0 && k.lightOpacity === 0), true);
+
+  // Sustained rapid burst accelerates speed toward ~2.45x and queues at most one pending hop
+  let now = 2400;
+  const landedKeys = new Set([settled.currentKey]);
+  for (let i = 0; i < 8; i++) {
+    ctrl.triggerKeystroke(now);
+    now += 45;
+  }
+  const fastState = ctrl.getState(now);
+  assert.ok(fastState.speed > 2.2 && fastState.speed <= 2.45, `fast speed=${fastState.speed}`);
+  assert.equal(fastState.pendingHop, true, "burst should keep one pending hop queued");
+
+  // Finish active hop + single pending hop; stopping typing leaves at most one follow-up
+  let hopCompletions = 0;
+  let prevKey = ctrl.getState(now).currentKey;
+  for (let i = 0; i < 60; i++) {
+    now += 20;
+    const frame = ctrl.step(now);
+    if (frame.currentKey !== prevKey) {
+      hopCompletions += 1;
+      prevKey = frame.currentKey;
+      landedKeys.add(frame.currentKey);
+    }
+    if (!frame.hopping) break;
+  }
+  assert.equal(hopCompletions, 2, "active hop + at most one pending follow-up hop");
+  assert.ok(landedKeys.size >= 2, "hops should vary target keycaps");
+
+  // After > 720 ms pause, cadence clears back to normal 1x pace
+  const afterPause = now + TRINKET_CADENCE_RESET_MS + 100;
+  ctrl.triggerKeystroke(afterPause);
+  assert.equal(ctrl.getState(afterPause).speed, 1);
+});
+
+test("sidebar trinket honors Animate Thocci off, reduced motion, and suspension reset", () => {
+  const ctrl = createSidebarTrinketController({ random: () => 0.1 });
+
+  // Reduced motion: short press highlight with zero airborne travel and zero impact marks
+  assert.equal(ctrl.setReducedMotion(true), true);
+  assert.equal(ctrl.triggerKeystroke(100), true);
+  const rmContact = ctrl.step(130);
+  assert.equal(rmContact.hopping, true);
+  assert.ok(rmContact.cat.y >= TRINKET_PERCH_Y, "reduced motion must not lift airborne");
+  assert.equal(rmContact.cat.stretch, 1);
+  assert.equal(rmContact.cat.squash, 1);
+  assert.equal(rmContact.impact.opacity, 0, "reduced motion must hide impact particles");
+  assert.equal(rmContact.keys.filter((k) => k.lightOpacity > 0).length, 1);
+
+  // Suspension clears pending hop, pressed cap, and cadence immediately
+  ctrl.triggerKeystroke(150); // queues pendingHop
+  assert.equal(ctrl.getState(150).pendingHop, true);
+  assert.equal(ctrl.setSuspended(true), true);
+  assert.equal(ctrl.setSuspended(true), false); // idempotent
+  const susp = ctrl.getState(160);
+  assert.equal(susp.hopping, false);
+  assert.equal(susp.pendingHop, false);
+  assert.equal(susp.speed, 1);
+  assert.equal(ctrl.triggerKeystroke(200), false, "ignored while suspended");
+  const resting = ctrl.buildRestingFrame();
+  assert.equal(resting.keys.every((k) => k.travel === 0 && k.lightOpacity === 0), true);
+
+  // Animate Thocci off: static resting pose on middle key, ignores keystrokes
+  assert.equal(ctrl.setSuspended(false), true);
+  assert.equal(ctrl.setAnimated(false), true);
+  assert.equal(ctrl.setAnimated(false), false); // idempotent
+  assert.equal(ctrl.getState().currentKey, 1);
+  assert.equal(ctrl.triggerKeystroke(500), false, "ignored while Animate Thocci is off");
 });

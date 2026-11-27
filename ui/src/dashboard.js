@@ -12,6 +12,7 @@
 import { api, currentTauriWindow, listenEvent } from "./bridge.js";
 import { iconMarkup } from "./icons.js";
 import { mountInteractiveKeyboard } from "./keyboard.js";
+import { mountSidebarTrinket } from "./sidebar-trinket.js";
 import { mountMascotStage } from "./stage.js";
 import { mountTypingGame } from "./typing-game.js";
 
@@ -263,10 +264,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
             </button>
           </section>
 
-          <div id="sidebarFooter" class="sidebar-footer" hidden>
-            <button id="fallbackQuickActionsBtn" type="button" class="sidebar-fallback-btn">
-              Open Quick Actions
-            </button>
+          <div id="sidebarFooter" class="sidebar-footer">
+            <div id="sidebarTrinket" class="sidebar-trinket" aria-hidden="true"></div>
           </div>
         </div>
 
@@ -365,8 +364,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const importWavLabel = root.querySelector("#importWavLabel");
   const animateToggle = root.querySelector("#animateToggle");
   const setupGuideBtn = root.querySelector("#setupGuideBtn");
-  const sidebarFooter = root.querySelector("#sidebarFooter");
-  const fallbackQuickActionsBtn = root.querySelector("#fallbackQuickActionsBtn");
+  const sidebarTrinketEl = root.querySelector("#sidebarTrinket");
   const spBackBtn = root.querySelector("#spBackBtn");
   const spSearchInput = root.querySelector("#spSearchInput");
   const spSearchClear = root.querySelector("#spSearchClear");
@@ -820,9 +818,13 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   let challengeSuspended = false;
   let dashboardHidden = false;
   let disabledSuspended = !status.running;
+  let guideSuspended = false;
+  let trinket = null;
 
   function syncStageSuspension() {
-    stage?.setSuspended?.(challengeSuspended || dashboardHidden || disabledSuspended);
+    const coreSuspended = challengeSuspended || dashboardHidden || disabledSuspended;
+    stage?.setSuspended?.(coreSuspended);
+    trinket?.setSuspended?.(coreSuspended || guideSuspended || sidebarView !== "settings");
   }
 
   function openTypingChallenge() {
@@ -918,17 +920,24 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   }
   window.addEventListener("keydown", handleTypingGameGuard);
 
-  // Mount live mascot stage & modern MacBook interactive keyboard (stationary across sidebar slides)
+  // Mount live mascot stage, sidebar keycap trinket & modern MacBook interactive keyboard
   stage = await mountMascotStage(stageCard, {
     initialTheme: resolvedTheme(),
     initialAnimated: prefs.animate_mascot,
   });
+
+  if (sidebarTrinketEl) {
+    trinket = await mountSidebarTrinket(sidebarTrinketEl, {
+      initialAnimated: prefs.animate_mascot,
+    });
+  }
 
   const keyboard = await mountInteractiveKeyboard(keyboardCard, {
     onVisualActivity() {
       if (!status.running) return;
       if (!typingGame && !stageSwapping && setupGuideModal.hidden) {
         stage.reactToKeystroke();
+        trinket?.reactToKeystroke();
       }
     },
     onPointerAudition(code, kind) {
@@ -997,6 +1006,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     soundpacksPane.inert = !inSoundpacks;
     settingsPane.setAttribute("aria-hidden", inSoundpacks ? "true" : "false");
     soundpacksPane.setAttribute("aria-hidden", inSoundpacks ? "false" : "true");
+    syncStageSuspension();
   }
 
   function setSidebarView(nextView, { animate = true, manageFocus = true } = {}) {
@@ -1473,6 +1483,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     prefs = { ...prefs, animate_mascot: nextVal };
     animateToggle.setAttribute("aria-checked", nextVal ? "true" : "false");
     stage.setAnimated(nextVal);
+    trinket?.setAnimated(nextVal);
     try {
       prefs = await api.saveUiPrefs(prefs);
     } catch (err) {
@@ -1622,10 +1633,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     if (prefs.theme === null) applyTheme();
   });
 
-  fallbackQuickActionsBtn.addEventListener("click", () => {
-    void api.openQuickActions().catch(() => {});
-  });
-
   // ── Setup Guide Modal ─────────────────────────────────────────────────────
   let setupGuideOpenedByKeyboard = false;
   let modalAnimTimer = null;
@@ -1634,6 +1641,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   function openSetupGuide({ focusClose = false, animate = true } = {}) {
     setupGuideOpenedByKeyboard = Boolean(focusClose);
     isClosingModal = false;
+    guideSuspended = true;
+    syncStageSuspension();
     if (modalAnimTimer) {
       clearTimeout(modalAnimTimer);
       modalAnimTimer = null;
@@ -1729,7 +1738,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
         </div>
         <footer class="modal-footer">
           <button id="guideQuitBtn" type="button" class="btn-danger-ghost">Quit Thocci</button>
-          <div style="display:flex;gap:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+            ${!info.tray_available ? `<button id="guideQuickActionsBtn" type="button" class="btn-secondary">Open Quick Actions</button>` : ""}
             <button id="guideRefreshBtn" type="button" class="btn-secondary">Refresh status</button>
             <button id="guideDoneBtn" type="button" class="btn-primary">Done</button>
           </div>
@@ -1740,6 +1750,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     const closeBtn = setupGuideModal.querySelector("#guideCloseTop");
     const doneBtn = setupGuideModal.querySelector("#guideDoneBtn");
     const refreshBtn = setupGuideModal.querySelector("#guideRefreshBtn");
+    const quickActionsBtn = setupGuideModal.querySelector("#guideQuickActionsBtn");
     const quitBtn = setupGuideModal.querySelector("#guideQuitBtn");
     const winWInput = setupGuideModal.querySelector("#guideWinW");
     const winHInput = setupGuideModal.querySelector("#guideWinH");
@@ -1775,6 +1786,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       await reconcileAll();
       openSetupGuide({ focusClose: false, animate: false });
     });
+    quickActionsBtn?.addEventListener("click", () => {
+      closeSetupGuide({ restoreFocus: false });
+      void api.openQuickActions().catch(() => {});
+    });
     quitBtn.addEventListener("click", () => {
       void api.quitApp().catch(() => {});
     });
@@ -1808,6 +1823,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       setupGuideModal.classList.remove("is-entering", "is-closing");
       setupGuideModal.hidden = true;
       setupGuideModal.innerHTML = "";
+      guideSuspended = false;
+      syncStageSuspension();
       if (restoreFocus) {
         setupGuideBtn.focus({ preventScroll: true });
       } else {
@@ -1889,6 +1906,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       applyTheme();
       animateToggle.setAttribute("aria-checked", prefs.animate_mascot ? "true" : "false");
       stage.setAnimated(prefs.animate_mascot);
+      trinket?.setAnimated(prefs.animate_mascot);
     }
   });
 
@@ -1920,9 +1938,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   // Apply already-loaded initial status/platform & trigger clean pop-in entrance
   renderStatus();
-  if (platformInfo && !platformInfo.tray_available) {
-    sidebarFooter.hidden = false;
-  }
   playEntranceAnimation();
 
   return {
@@ -1938,6 +1953,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       window.removeEventListener("keydown", handleDashboardKeyDown);
       keyboard.destroy();
       stage.destroy();
+      trinket?.destroy();
       unlistenOverlay();
       unlistenShown();
       unlistenHidden();
