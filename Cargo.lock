@@ -4563,13 +4563,14 @@ dependencies = [
 
 [[package]]
 name = "thocci-app"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "cairo-rs",
  "gdk",
  "gdkwayland-sys",
  "glib",
  "gtk",
+ "libc",
  "log",
  "serde",
  "serde_json",
@@ -4585,7 +4586,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-cli"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clap",
  "enable-ansi-support",
@@ -4594,7 +4595,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-core"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "core-foundation",
  "core-graphics",

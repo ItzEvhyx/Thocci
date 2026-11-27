@@ -32,7 +32,51 @@ const TRAY_ICON_PNG: &[u8] =
 const TRAY_ICON_PNG: &[u8] =
     include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-32.png");
 
+#[cfg(target_os = "linux")]
+const LINUX_APPINDICATOR_SONAMES: &[&std::ffi::CStr] = &[
+    c"libayatana-appindicator3.so.1",
+    c"libappindicator3.so.1",
+    c"libayatana-appindicator3.so",
+    c"libappindicator3.so",
+];
+
+#[cfg(target_os = "linux")]
+fn can_dlopen_any(sonames: &[&std::ffi::CStr]) -> bool {
+    for soname in sonames {
+        // SAFETY: `soname` is a valid NUL-terminated C string; any non-null
+        // handle returned by `dlopen` is immediately released with `dlclose`.
+        let handle = unsafe { libc::dlopen(soname.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
+        if !handle.is_null() {
+            unsafe {
+                libc::dlclose(handle);
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// Probe whether any `libappindicator3` / `libayatana-appindicator3` shared
+/// library can be loaded before invoking Tauri's tray builder.
+///
+/// On Linux, `tray-icon` uses `libappindicator-sys`, which panics inside its
+/// lazy library loader if none of these libraries are installed on the host.
+/// Checking with `dlopen` first lets Thocci fall back cleanly to dashboard mode
+/// instead of crashing on startup on minimal Linux / Arch / Hyprland setups.
+#[cfg(target_os = "linux")]
+fn has_linux_appindicator_lib() -> bool {
+    can_dlopen_any(LINUX_APPINDICATOR_SONAMES)
+}
+
 pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
+    #[cfg(target_os = "linux")]
+    if !has_linux_appindicator_lib() {
+        log::warn!(
+            "System tray library (libayatana-appindicator3 / libappindicator3) not found; continuing with dashboard fallback"
+        );
+        return false;
+    }
+
     let toggle_label = if initial_running {
         "Disable Thocci"
     } else {
@@ -120,11 +164,17 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
     #[cfg(target_os = "macos")]
     let builder = builder.icon_as_template(true);
 
-    match builder.build(app) {
-        Ok(_) => true,
-        Err(err) => {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build(app))) {
+        Ok(Ok(_)) => true,
+        Ok(Err(err)) => {
             log::warn!(
                 "System tray unavailable on this host ({err}); continuing with dashboard fallback"
+            );
+            false
+        }
+        Err(_) => {
+            log::warn!(
+                "System tray backend panicked during initialization; continuing with dashboard fallback"
             );
             false
         }
@@ -408,4 +458,17 @@ fn rect_to_physical(rect: &Rect, monitor: Option<&tauri::Monitor>) -> (i32, i32,
     let pos = rect.position.to_physical::<i32>(scale);
     let size = rect.size.to_physical::<i32>(scale);
     (pos.x, pos.y, size.width, size.height)
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_shared_libraries_return_false_without_panicking() {
+        assert!(!can_dlopen_any(&[
+            c"libthocci-nonexistent-tray-probe-1.so.0",
+            c"libthocci-nonexistent-tray-probe-2.so",
+        ]));
+    }
 }
