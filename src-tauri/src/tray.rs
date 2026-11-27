@@ -4,7 +4,9 @@ use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::image::Image;
+#[cfg(not(target_os = "linux"))]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+#[cfg(not(target_os = "linux"))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, WebviewUrl,
@@ -14,11 +16,17 @@ use tauri::{
 use crate::platform::{compute_popover_position, fallback_popover_position, PixelRect};
 use crate::AppState;
 
+#[cfg(not(target_os = "linux"))]
 const TRAY_ID: &str = "thocci-tray";
+#[cfg(not(target_os = "linux"))]
 const MENU_TOGGLE: &str = "tray-toggle";
+#[cfg(not(target_os = "linux"))]
 const MENU_QUICK_ACTIONS: &str = "tray-quick-actions";
+#[cfg(not(target_os = "linux"))]
 const MENU_DASHBOARD: &str = "tray-dashboard";
+#[cfg(not(target_os = "linux"))]
 const MENU_SOUNDPACKS: &str = "tray-soundpacks";
+#[cfg(not(target_os = "linux"))]
 const MENU_QUIT: &str = "tray-quit";
 
 const QUICK_ACTIONS_LOGICAL_W: f64 = 288.0;
@@ -28,55 +36,210 @@ const QUICK_ACTIONS_LOGICAL_H: f64 = 282.0;
 const TRAY_ICON_PNG: &[u8] =
     include_bytes!("../../assets/desktop/brand/tray/thocci-tray-template-32.png");
 
+#[cfg(target_os = "linux")]
+const TRAY_ICON_22_PNG: &[u8] =
+    include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-22.png");
+
 #[cfg(not(target_os = "macos"))]
 const TRAY_ICON_PNG: &[u8] =
     include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-32.png");
 
 #[cfg(target_os = "linux")]
-const LINUX_APPINDICATOR_SONAMES: &[&std::ffi::CStr] = &[
-    c"libayatana-appindicator3.so.1",
-    c"libappindicator3.so.1",
-    c"libayatana-appindicator3.so",
-    c"libappindicator3.so",
-];
+fn decode_png_to_ksni_icon(bytes: &[u8]) -> Option<ksni::Icon> {
+    let img = Image::from_bytes(bytes).ok()?;
+    let width = img.width() as i32;
+    let height = img.height() as i32;
+    let mut data = img.rgba().to_vec();
+    for px in data.as_chunks_mut::<4>().0 {
+        // StatusNotifierItem expects ARGB32 in network (big-endian) byte order.
+        px.rotate_right(1);
+    }
+    Some(ksni::Icon {
+        width,
+        height,
+        data,
+    })
+}
 
 #[cfg(target_os = "linux")]
-fn can_dlopen_any(sonames: &[&std::ffi::CStr]) -> bool {
-    for soname in sonames {
-        // SAFETY: `soname` is a valid NUL-terminated C string; any non-null
-        // handle returned by `dlopen` is immediately released with `dlclose`.
-        let handle = unsafe { libc::dlopen(soname.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
-        if !handle.is_null() {
-            unsafe {
-                libc::dlclose(handle);
-            }
-            return true;
+fn build_linux_tray_icons() -> Vec<ksni::Icon> {
+    let mut icons = Vec::with_capacity(2);
+    if let Some(icon_22) = decode_png_to_ksni_icon(TRAY_ICON_22_PNG) {
+        icons.push(icon_22);
+    }
+    if let Some(icon_32) = decode_png_to_ksni_icon(TRAY_ICON_PNG) {
+        icons.push(icon_32);
+    }
+    icons
+}
+
+/// Pure-Rust Linux StatusNotifierItem tray over D-Bus (`org.kde.StatusNotifierWatcher`).
+///
+/// Works natively on Quickshell, Waybar, Hyprpanel, AGS, KDE Plasma, GNOME
+/// AppIndicator, Swaybar, Polybar, and X11 panels without requiring
+/// `libayatana-appindicator3` or `libappindicator3` shared libraries.
+#[cfg(target_os = "linux")]
+pub(crate) struct LinuxTray {
+    app: AppHandle<Wry>,
+    running: bool,
+    icons: Vec<ksni::Icon>,
+}
+
+#[cfg(target_os = "linux")]
+impl ksni::Tray for LinuxTray {
+    fn id(&self) -> String {
+        "thocci".to_owned()
+    }
+
+    fn category(&self) -> ksni::Category {
+        ksni::Category::ApplicationStatus
+    }
+
+    fn title(&self) -> String {
+        "Thocci".to_owned()
+    }
+
+    fn status(&self) -> ksni::Status {
+        ksni::Status::Active
+    }
+
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        self.icons.clone()
+    }
+
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            icon_name: String::new(),
+            icon_pixmap: Vec::new(),
+            title: if self.running {
+                "Thocci — On".to_owned()
+            } else {
+                "Thocci — Off".to_owned()
+            },
+            description: "Click to open Quick Actions".to_owned(),
         }
     }
-    false
-}
 
-/// Probe whether any `libappindicator3` / `libayatana-appindicator3` shared
-/// library can be loaded before invoking Tauri's tray builder.
-///
-/// On Linux, `tray-icon` uses `libappindicator-sys`, which panics inside its
-/// lazy library loader if none of these libraries are installed on the host.
-/// Checking with `dlopen` first lets Thocci fall back cleanly to dashboard mode
-/// instead of crashing on startup on minimal Linux / Arch / Hyprland setups.
-#[cfg(target_os = "linux")]
-fn has_linux_appindicator_lib() -> bool {
-    can_dlopen_any(LINUX_APPINDICATOR_SONAMES)
-}
-
-pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
-    #[cfg(target_os = "linux")]
-    if !has_linux_appindicator_lib() {
-        log::warn!(
-            "System tray library (libayatana-appindicator3 / libappindicator3) not found; continuing with dashboard fallback"
-        );
-        return false;
+    fn activate(&mut self, x: i32, y: i32) {
+        let anchor = if x > 0 || y > 0 {
+            Some(Rect {
+                position: tauri::Position::Physical(PhysicalPosition::new(x, y)),
+                size: tauri::Size::Physical(PhysicalSize::new(24, 24)),
+            })
+        } else {
+            None
+        };
+        toggle_quick_actions_anchored(&self.app, anchor);
     }
 
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::{MenuItem as KsniMenuItem, StandardItem};
+
+        let toggle_label = if self.running {
+            "Disable Thocci"
+        } else {
+            "Enable Thocci"
+        };
+
+        vec![
+            StandardItem {
+                label: toggle_label.to_owned(),
+                activate: Box::new(|this: &mut Self| {
+                    let app_handle = this.app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = crate::toggle_daemon_internal(app_handle).await;
+                    });
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Quick Actions".to_owned(),
+                activate: Box::new(|this: &mut Self| {
+                    toggle_quick_actions_anchored(&this.app, None);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Open Dashboard".to_owned(),
+                activate: Box::new(|this: &mut Self| {
+                    let _ = crate::show_dashboard_window(&this.app, None);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Browse Soundpacks".to_owned(),
+                activate: Box::new(|this: &mut Self| {
+                    let _ = crate::show_dashboard_window(&this.app, Some("soundpacks".to_owned()));
+                }),
+                ..Default::default()
+            }
+            .into(),
+            KsniMenuItem::Separator,
+            StandardItem {
+                label: "Quit Thocci".to_owned(),
+                activate: Box::new(|this: &mut Self| {
+                    let app_handle = this.app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::shutdown_and_exit(app_handle).await;
+                    });
+                }),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub async fn setup_tray_async(app: &AppHandle<Wry>, initial_running: bool) -> bool {
+    use ksni::TrayMethods;
+
+    let tray = LinuxTray {
+        app: app.clone(),
+        running: initial_running,
+        icons: build_linux_tray_icons(),
+    };
+
+    match tray.spawn().await {
+        Ok(handle) => {
+            let state = app.state::<AppState>();
+            *state
+                .linux_tray_handle
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            true
+        }
+        Err(err) => {
+            log::warn!(
+                "Linux StatusNotifierItem tray unavailable on this host ({err}); continuing with dashboard fallback"
+            );
+            false
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let ok = setup_tray_async(&app_clone, initial_running).await;
+        let _ = tx.send(ok);
+    });
+    rx.recv_timeout(std::time::Duration::from_millis(1500))
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn setup_tray_async(app: &AppHandle<Wry>, initial_running: bool) -> bool {
+    setup_tray(app, initial_running)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
     let toggle_label = if initial_running {
         "Disable Thocci"
     } else {
@@ -140,13 +303,11 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
         *slot = Some(toggle_item);
     }
 
-    let show_menu_on_left = cfg!(target_os = "linux");
-
     let builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .tooltip("Thocci")
         .menu(&menu)
-        .show_menu_on_left_click(show_menu_on_left)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()))
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -182,30 +343,68 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
 }
 
 pub fn refresh_tray_status(app: &AppHandle<Wry>, running: bool) {
-    let state = app.state::<AppState>();
-    let label = if running {
-        "Disable Thocci"
-    } else {
-        "Enable Thocci"
-    };
-    if let Some(item) = state
-        .tray_toggle_item
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .as_ref()
+    #[cfg(target_os = "linux")]
     {
-        let _ = item.set_text(label);
+        let handle = app
+            .state::<AppState>()
+            .linux_tray_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(handle) = handle {
+            tauri::async_runtime::spawn(async move {
+                let _ = handle.update(|tray| tray.running = running).await;
+            });
+        }
     }
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let tooltip = if running {
-            "Thocci — On"
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let state = app.state::<AppState>();
+        let label = if running {
+            "Disable Thocci"
         } else {
-            "Thocci — Off"
+            "Enable Thocci"
         };
-        let _ = tray.set_tooltip(Some(tooltip));
+        if let Some(item) = state
+            .tray_toggle_item
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            let _ = item.set_text(label);
+        }
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            let tooltip = if running {
+                "Thocci — On"
+            } else {
+                "Thocci — Off"
+            };
+            let _ = tray.set_tooltip(Some(tooltip));
+        }
     }
 }
 
+pub async fn shutdown_tray(app: &AppHandle<Wry>) {
+    #[cfg(target_os = "linux")]
+    {
+        let handle = app
+            .state::<AppState>()
+            .linux_tray_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        if let Some(handle) = handle {
+            handle.shutdown().await;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn handle_menu_event(app: &AppHandle<Wry>, id: &str) {
     match id {
         MENU_TOGGLE => {
@@ -465,10 +664,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn missing_shared_libraries_return_false_without_panicking() {
-        assert!(!can_dlopen_any(&[
-            c"libthocci-nonexistent-tray-probe-1.so.0",
-            c"libthocci-nonexistent-tray-probe-2.so",
-        ]));
+    fn linux_tray_icons_decode_to_valid_argb32_pixmaps() {
+        let icons = build_linux_tray_icons();
+        assert_eq!(icons.len(), 2);
+        assert_eq!((icons[0].width, icons[0].height), (22, 22));
+        assert_eq!(icons[0].data.len(), 22 * 22 * 4);
+        assert_eq!((icons[1].width, icons[1].height), (32, 32));
+        assert_eq!(icons[1].data.len(), 32 * 32 * 4);
     }
 }

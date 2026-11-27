@@ -139,7 +139,6 @@ export const api = {
   openDashboard: (route = null) => call("open_dashboard", { route }),
   openQuickActions: () => call("open_quick_actions"),
   hideQuickActions: () => call("hide_quick_actions"),
-  minimizeWindow: () => call("minimize_window"),
   quitApp: () => call("quit_app"),
 };
 

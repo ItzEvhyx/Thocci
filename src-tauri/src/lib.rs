@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
+#[cfg(not(target_os = "linux"))]
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
@@ -67,6 +68,9 @@ pub(crate) struct AppState {
     pub engine_lock: Arc<Mutex<()>>,
     pub preview: Arc<PreviewPlayer>,
     pub tray_available: AtomicBool,
+    #[cfg(target_os = "linux")]
+    pub linux_tray_handle: Mutex<Option<ksni::Handle<tray::LinuxTray>>>,
+    #[cfg(not(target_os = "linux"))]
     pub tray_toggle_item: Mutex<Option<MenuItem<Wry>>>,
     pub last_quick_actions_blur_ms: AtomicU64,
     pub last_quick_actions_show_ms: AtomicU64,
@@ -80,6 +84,9 @@ impl Default for AppState {
             engine_lock: Arc::new(Mutex::new(())),
             preview: Arc::new(PreviewPlayer::new()),
             tray_available: AtomicBool::new(false),
+            #[cfg(target_os = "linux")]
+            linux_tray_handle: Mutex::new(None),
+            #[cfg(not(target_os = "linux"))]
             tray_toggle_item: Mutex::new(None),
             last_quick_actions_blur_ms: AtomicU64::new(0),
             last_quick_actions_show_ms: AtomicU64::new(0),
@@ -503,7 +510,7 @@ async fn complete_onboarding(app: AppHandle<Wry>) -> Result<UiPrefs, String> {
     .map_err(|err| err.to_string())??;
 
     configure_main_window_for_mode(&app, true, &saved);
-    ensure_tray_initialized(&app);
+    ensure_tray_initialized_async(&app).await;
     let _ = app.emit("thocci://prefs-changed", &saved);
     Ok(saved)
 }
@@ -540,23 +547,6 @@ fn hide_quick_actions(app: AppHandle<Wry>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn minimize_window(app: AppHandle<Wry>) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    if layer_shell::is_active() {
-        let _ = app.emit_to("main", "thocci://dashboard-hidden", ());
-        let _ = app.run_on_main_thread(|| {
-            layer_shell::hide_window("main");
-        });
-        return Ok(());
-    }
-
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.minimize();
-    }
-    Ok(())
-}
-
-#[tauri::command]
 async fn quit_app(app: AppHandle<Wry>) -> Result<(), String> {
     shutdown_and_exit(app).await;
     Ok(())
@@ -565,6 +555,7 @@ async fn quit_app(app: AppHandle<Wry>) -> Result<(), String> {
 pub(crate) async fn shutdown_and_exit(app: AppHandle<Wry>) {
     let state = app.state::<AppState>();
     state.is_quitting.store(true, Ordering::Release);
+    tray::shutdown_tray(&app).await;
     let lock = Arc::clone(&state.engine_lock);
     let preview = Arc::clone(&state.preview);
 
@@ -675,6 +666,17 @@ fn ensure_tray_initialized(app: &AppHandle<Wry>) {
     }
     let running = client::running_pid().is_some();
     if tray::setup_tray(app, running) {
+        state.tray_available.store(true, Ordering::Release);
+    }
+}
+
+async fn ensure_tray_initialized_async(app: &AppHandle<Wry>) {
+    let state = app.state::<AppState>();
+    if state.tray_available.load(Ordering::Acquire) {
+        return;
+    }
+    let running = client::running_pid().is_some();
+    if tray::setup_tray_async(app, running).await {
         state.tray_available.store(true, Ordering::Release);
     }
 }
@@ -866,7 +868,6 @@ pub fn run() {
             open_dashboard,
             open_quick_actions,
             hide_quick_actions,
-            minimize_window,
             quit_app,
         ])
         .run(tauri::generate_context!())

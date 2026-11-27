@@ -320,12 +320,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
             <div class="workspace-header-right">
               <div class="workspace-header-actions">
                 <button id="themeToggleBtn" type="button" class="theme-pill"></button>
-                <button id="windowMinimizeBtn" type="button" class="window-ctrl-btn" aria-label="Minimize window" title="Minimize">
-                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-                    <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                  </svg>
-                </button>
-                <button id="windowCloseBtn" type="button" class="window-ctrl-btn window-close-btn" aria-label="Close window" title="Close">
+                <button id="windowCloseBtn" type="button" class="window-close-btn" aria-label="Close window" title="Close">
                   <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
                     <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                   </svg>
@@ -377,7 +372,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const spSearchClear = root.querySelector("#spSearchClear");
   const spListScroll = root.querySelector("#spListScroll");
   const themeToggleBtn = root.querySelector("#themeToggleBtn");
-  const windowMinimizeBtn = root.querySelector("#windowMinimizeBtn");
   const windowCloseBtn = root.querySelector("#windowCloseBtn");
   const challengeTriggerBtn = root.querySelector("#challengeTriggerBtn");
   const workspaceHeader = root.querySelector("#workspaceHeader");
@@ -681,16 +675,6 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       startLayerResize(handle, dir, ev);
     });
   }
-
-  windowMinimizeBtn?.addEventListener("click", () => {
-    if (layerPanelMode || platformInfo?.layer_shell_active) {
-      closeDashboardAnimated();
-      return;
-    }
-    void api.minimizeWindow().catch(() => {
-      void currentTauriWindow()?.minimize?.().catch(() => {});
-    });
-  });
 
   windowCloseBtn?.addEventListener("click", closeDashboardAnimated);
 

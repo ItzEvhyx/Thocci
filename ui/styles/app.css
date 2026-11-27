@@ -734,7 +734,6 @@ body[data-layer-backdrop="true"] .qa-shell {
   transform: translateX(3px);
 }
 
-.window-ctrl-btn,
 .window-close-btn {
   width: 34px;
   height: 34px;
@@ -751,7 +750,6 @@ body[data-layer-backdrop="true"] .qa-shell {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.window-ctrl-btn:hover,
 .window-close-btn:hover {
   background: var(--bg-raised-hover);
   color: var(--text-primary);
