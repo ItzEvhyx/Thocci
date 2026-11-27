@@ -115,7 +115,7 @@ async function call(cmd, args = {}) {
     case "check_for_update":
       return {
         available: false,
-        currentVersion: "1.0.4",
+        currentVersion: "1.0.5",
         version: null,
         notes: null,
       };
