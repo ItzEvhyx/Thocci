@@ -102,7 +102,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     };
   }
   const initialShellStyle = layerPanelMode
-    ? ` style="left:${layerRect.x}px;top:${layerRect.y}px;width:${layerRect.width}px;height:${layerRect.height}px"`
+    ? ` style="left:${layerRect.x}px;top:${layerRect.y}px;width:${layerRect.width}px;height:${layerRect.height}px;--shell-h:${layerRect.height}px"`
     : "";
   const initialEnabledAttr = status.running ? "true" : "false";
 
@@ -320,7 +320,16 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
             <div class="workspace-header-right">
               <div class="workspace-header-actions">
                 <button id="themeToggleBtn" type="button" class="theme-pill"></button>
-                <button id="windowCloseBtn" type="button" class="window-close-btn" aria-label="Close window">×</button>
+                <button id="windowMinimizeBtn" type="button" class="window-ctrl-btn" aria-label="Minimize window" title="Minimize">
+                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                    <line x1="2" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <button id="windowCloseBtn" type="button" class="window-ctrl-btn window-close-btn" aria-label="Close window" title="Close">
+                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                    <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
               </div>
               <button id="challengeTriggerBtn" type="button" class="challenge-trigger-btn">
                 <span>Up for a speed test? Try the 20s challenge</span>
@@ -368,6 +377,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const spSearchClear = root.querySelector("#spSearchClear");
   const spListScroll = root.querySelector("#spListScroll");
   const themeToggleBtn = root.querySelector("#themeToggleBtn");
+  const windowMinimizeBtn = root.querySelector("#windowMinimizeBtn");
   const windowCloseBtn = root.querySelector("#windowCloseBtn");
   const challengeTriggerBtn = root.querySelector("#challengeTriggerBtn");
   const workspaceHeader = root.querySelector("#workspaceHeader");
@@ -496,6 +506,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     dashboardShell.style.top = `${layerRect.y}px`;
     dashboardShell.style.width = `${layerRect.width}px`;
     dashboardShell.style.height = `${layerRect.height}px`;
+    dashboardShell.style.setProperty("--shell-h", `${layerRect.height}px`);
   }
 
   function applyOverlayPlacement(placement) {
@@ -593,9 +604,9 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       }
 
       if (hasS) {
-        nextH = Math.max(474, Math.min(2160, startH + dy));
+        nextH = Math.max(440, Math.min(2160, startH + dy));
       } else if (hasN) {
-        const proposedH = Math.max(474, Math.min(2160, startH - dy));
+        const proposedH = Math.max(440, Math.min(2160, startH - dy));
         nextY = Math.max(0, startY + (startH - proposedH));
         nextH = startY + startH - nextY;
       }
@@ -621,14 +632,26 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     window.addEventListener("pointercancel", onEnd);
   }
 
+  function startWindowDrag(el, ev) {
+    if (ev.button !== 0 || ev.target.closest("button, input, a")) return;
+    if (layerPanelMode || platformInfo?.layer_shell_active) {
+      ev.preventDefault();
+      startLayerDrag(el, ev);
+    } else {
+      ev.preventDefault();
+      void currentTauriWindow()?.startDragging?.().catch(() => {});
+    }
+  }
+
   function bindDragArea(el) {
+    el?.addEventListener("mousedown", (ev) => {
+      if (!(layerPanelMode || platformInfo?.layer_shell_active)) {
+        startWindowDrag(el, ev);
+      }
+    });
     el?.addEventListener("pointerdown", (ev) => {
-      if (ev.button !== 0 || ev.target.closest("button, input, a")) return;
       if (layerPanelMode || platformInfo?.layer_shell_active) {
-        ev.preventDefault();
-        startLayerDrag(el, ev);
-      } else {
-        void currentTauriWindow()?.startDragging?.().catch(() => {});
+        startWindowDrag(el, ev);
       }
     });
   }
@@ -636,18 +659,38 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   bindDragArea(sidebarBrand);
 
   for (const handle of root.querySelectorAll(".resize-handle")) {
-    handle.addEventListener("pointerdown", (ev) => {
+    // Native OS windows (Windows WebView2, macOS WKWebView, X11) respond most
+    // reliably to `startResizeDragging` initiated during `mousedown`.
+    handle.addEventListener("mousedown", (ev) => {
       if (ev.button !== 0) return;
+      if (layerPanelMode || platformInfo?.layer_shell_active) return;
       const dir = handle.dataset.resize;
       if (!dir) return;
-      if (layerPanelMode || platformInfo?.layer_shell_active) {
-        ev.preventDefault();
-        startLayerResize(handle, dir, ev);
-      } else {
-        void currentTauriWindow()?.startResizeDragging?.(dir).catch(() => {});
-      }
+      ev.preventDefault();
+      ev.stopPropagation();
+      void currentTauriWindow()?.startResizeDragging?.(dir).catch(() => {});
+    });
+
+    // Wayland layer-shell panels resize smoothly in screen-space via pointer capture.
+    handle.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      if (!(layerPanelMode || platformInfo?.layer_shell_active)) return;
+      const dir = handle.dataset.resize;
+      if (!dir) return;
+      ev.preventDefault();
+      startLayerResize(handle, dir, ev);
     });
   }
+
+  windowMinimizeBtn?.addEventListener("click", () => {
+    if (layerPanelMode || platformInfo?.layer_shell_active) {
+      closeDashboardAnimated();
+      return;
+    }
+    void api.minimizeWindow().catch(() => {
+      void currentTauriWindow()?.minimize?.().catch(() => {});
+    });
+  });
 
   windowCloseBtn?.addEventListener("click", closeDashboardAnimated);
 
@@ -1682,10 +1725,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
             <p>Set Thocci’s default floating size (or drag any window edge/corner to resize freely).</p>
             <div class="guide-size-row">
               <label for="guideWinW" class="sr-only">Default width</label>
-              <input id="guideWinW" class="guide-size-input" type="number" min="640" max="3840" value="${escapeHtml(prefs.window_width ?? 1160)}" />
+              <input id="guideWinW" class="guide-size-input" type="number" min="480" max="3840" value="${escapeHtml(prefs.window_width ?? 1160)}" />
               <span style="color:var(--text-muted);font-size:12px">×</span>
               <label for="guideWinH" class="sr-only">Default height</label>
-              <input id="guideWinH" class="guide-size-input" type="number" min="520" max="2160" value="${escapeHtml(prefs.window_height ?? 806)}" />
+              <input id="guideWinH" class="guide-size-input" type="number" min="440" max="2160" value="${escapeHtml(prefs.window_height ?? 806)}" />
               <button id="guideSizeApply" type="button" class="btn-secondary" style="height:32px;padding:0 12px;font-size:12px">Apply</button>
               <button id="guideSizeReset" type="button" class="btn-secondary" style="height:32px;padding:0 10px;font-size:12px">Reset (1160×806)</button>
             </div>
@@ -1720,8 +1763,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     const sizeResetBtn = setupGuideModal.querySelector("#guideSizeReset");
 
     sizeApplyBtn?.addEventListener("click", async () => {
-      const w = Math.max(640, Math.min(3840, Math.round(Number(winWInput.value) || 1160)));
-      const h = Math.max(520, Math.min(2160, Math.round(Number(winHInput.value) || 806)));
+      const w = Math.max(480, Math.min(3840, Math.round(Number(winWInput.value) || 1160)));
+      const h = Math.max(440, Math.min(2160, Math.round(Number(winHInput.value) || 806)));
       try {
         prefs = await api.setWindowSize(w, h);
         winWInput.value = String(prefs.window_width ?? 1160);

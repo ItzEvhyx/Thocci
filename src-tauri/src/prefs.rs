@@ -14,10 +14,43 @@ use thocci_core::paths;
 
 pub const DEFAULT_DASHBOARD_WIDTH: u32 = 1160;
 pub const DEFAULT_DASHBOARD_HEIGHT: u32 = 806;
-pub const MIN_DASHBOARD_WIDTH: u32 = 640;
-pub const MIN_DASHBOARD_HEIGHT: u32 = 520;
+pub const MIN_DASHBOARD_WIDTH: u32 = 480;
+pub const MIN_DASHBOARD_HEIGHT: u32 = 440;
 pub const MAX_DASHBOARD_WIDTH: u32 = 3840;
 pub const MAX_DASHBOARD_HEIGHT: u32 = 2160;
+
+/// Fit a desired dashboard window size cleanly inside the monitor's logical
+/// work area (leaving a comfortable margin around taskbars/panels). Scales
+/// proportionally when the monitor is smaller than the default 1160x806 so
+/// the entire window stays visible on 1366x768 and 150%-DPI laptops.
+pub fn fit_dashboard_size_to_work_area(
+    desired_w: u32,
+    desired_h: u32,
+    work_w: u32,
+    work_h: u32,
+) -> (u32, u32) {
+    if work_w == 0 || work_h == 0 {
+        return (desired_w, desired_h);
+    }
+    let margin_x = if work_w > 560 { 32 } else { 12 };
+    let margin_y = if work_h > 500 { 32 } else { 12 };
+    let max_w = work_w.saturating_sub(margin_x).max(320);
+    let max_h = work_h.saturating_sub(margin_y).max(320);
+
+    if desired_w <= max_w && desired_h <= max_h {
+        return (desired_w, desired_h);
+    }
+
+    let scale_w = f64::from(max_w) / f64::from(desired_w.max(1));
+    let scale_h = f64::from(max_h) / f64::from(desired_h.max(1));
+    let scale = scale_w.min(scale_h).clamp(0.1, 1.0);
+
+    let min_w = MIN_DASHBOARD_WIDTH.min(max_w);
+    let min_h = MIN_DASHBOARD_HEIGHT.min(max_h);
+    let fitted_w = ((f64::from(desired_w) * scale).round() as u32).clamp(min_w, max_w);
+    let fitted_h = ((f64::from(desired_h) * scale).round() as u32).clamp(min_h, max_h);
+    (fitted_w, fitted_h)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -164,5 +197,24 @@ mod tests {
         assert_eq!(paths::read_saved_volume(), 42);
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fits_dashboard_cleanly_inside_low_resolution_work_areas() {
+        // Full HD desktop (1920x1040 work area) keeps exact default 1160x806
+        assert_eq!(
+            fit_dashboard_size_to_work_area(1160, 806, 1920, 1040),
+            (1160, 806)
+        );
+
+        // 1366x768 laptop with taskbar (~1366x720 work area) scales down cleanly
+        let (w768, h768) = fit_dashboard_size_to_work_area(1160, 806, 1366, 720);
+        assert!(w768 <= 1334 && h768 <= 688, "got {w768}x{h768}");
+        assert!(w768 >= 900 && h768 >= 640, "got {w768}x{h768}");
+
+        // 1920x1080 @ 150% DPI (~1280x672 logical work area) fits with zero cutoff
+        let (w_dpi, h_dpi) = fit_dashboard_size_to_work_area(1160, 806, 1280, 672);
+        assert!(w_dpi <= 1248 && h_dpi <= 640, "got {w_dpi}x{h_dpi}");
+        assert!(w_dpi >= 850 && h_dpi >= 600, "got {w_dpi}x{h_dpi}");
     }
 }

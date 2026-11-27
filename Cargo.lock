@@ -4563,7 +4563,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-app"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "cairo-rs",
  "gdk",
@@ -4585,7 +4585,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-cli"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "clap",
  "enable-ansi-support",
@@ -4594,7 +4594,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "core-foundation",
  "core-graphics",

@@ -540,6 +540,23 @@ fn hide_quick_actions(app: AppHandle<Wry>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn minimize_window(app: AppHandle<Wry>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if layer_shell::is_active() {
+        let _ = app.emit_to("main", "thocci://dashboard-hidden", ());
+        let _ = app.run_on_main_thread(|| {
+            layer_shell::hide_window("main");
+        });
+        return Ok(());
+    }
+
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.minimize();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn quit_app(app: AppHandle<Wry>) -> Result<(), String> {
     shutdown_and_exit(app).await;
     Ok(())
@@ -567,11 +584,6 @@ pub(crate) fn show_dashboard_window(
 ) -> Result<(), String> {
     tray::hide_quick_actions_window(app);
 
-    let prefs_now = prefs::load_prefs();
-    if prefs_now.onboarding_completed {
-        configure_main_window_for_mode(app, true, &prefs_now);
-    }
-
     let Some(win) = app.get_webview_window("main") else {
         return Err("Main dashboard window is unavailable".to_owned());
     };
@@ -580,20 +592,6 @@ pub(crate) fn show_dashboard_window(
     let _ = win.unminimize();
     let _ = win.set_focus();
 
-    #[cfg(target_os = "linux")]
-    let use_wm_float = !layer_shell::is_active();
-    #[cfg(not(target_os = "linux"))]
-    let use_wm_float = true;
-
-    if use_wm_float {
-        let (w, h) = if prefs_now.onboarding_completed {
-            prefs_now.effective_dashboard_size()
-        } else {
-            (ONBOARDING_WIDTH as u32, ONBOARDING_HEIGHT as u32)
-        };
-        platform::ensure_floating_overlay("Thocci", w, h, true, false);
-    }
-
     if let Some(view) = route {
         let _ = app.emit_to("main", "thocci://navigate", NavigatePayload { view });
     }
@@ -601,12 +599,32 @@ pub(crate) fn show_dashboard_window(
     Ok(())
 }
 
+fn fitted_dashboard_size_for_window(
+    win: &tauri::WebviewWindow<Wry>,
+    desired_w: u32,
+    desired_h: u32,
+) -> (u32, u32) {
+    let monitor = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| win.primary_monitor().ok().flatten());
+    if let Some(m) = monitor {
+        let scale = m.scale_factor().max(0.5);
+        let wa = m.work_area();
+        let work_w = (f64::from(wa.size.width) / scale).round() as u32;
+        let work_h = (f64::from(wa.size.height) / scale).round() as u32;
+        return prefs::fit_dashboard_size_to_work_area(desired_w, desired_h, work_w, work_h);
+    }
+    (desired_w, desired_h)
+}
+
 fn configure_main_window_for_mode(app: &AppHandle<Wry>, dashboard_mode: bool, ui_prefs: &UiPrefs) {
     let Some(win) = app.get_webview_window("main") else {
         return;
     };
 
-    let (target_w, target_h) = if dashboard_mode {
+    let (desired_w, desired_h) = if dashboard_mode {
         ui_prefs.effective_dashboard_size()
     } else {
         (ONBOARDING_WIDTH as u32, ONBOARDING_HEIGHT as u32)
@@ -614,6 +632,17 @@ fn configure_main_window_for_mode(app: &AppHandle<Wry>, dashboard_mode: bool, ui
 
     #[cfg(target_os = "linux")]
     if layer_shell::is_active() {
+        let (mon_w, mon_h) = layer_shell::current_monitor_logical_size().unwrap_or((1920, 1080));
+        let (target_w, target_h) = if dashboard_mode {
+            prefs::fit_dashboard_size_to_work_area(
+                desired_w,
+                desired_h,
+                mon_w.max(320) as u32,
+                mon_h.max(320) as u32,
+            )
+        } else {
+            (desired_w, desired_h)
+        };
         let _ = app.run_on_main_thread(move || {
             layer_shell::center_panel("main", target_w as i32, target_h as i32);
         });
@@ -621,6 +650,7 @@ fn configure_main_window_for_mode(app: &AppHandle<Wry>, dashboard_mode: bool, ui
     }
 
     if dashboard_mode {
+        let (target_w, target_h) = fitted_dashboard_size_for_window(&win, desired_w, desired_h);
         let _ = win.set_resizable(true);
         let _ = win.set_min_size(Some(LogicalSize::new(
             f64::from(prefs::MIN_DASHBOARD_WIDTH),
@@ -634,7 +664,7 @@ fn configure_main_window_for_mode(app: &AppHandle<Wry>, dashboard_mode: bool, ui
         let _ = win.set_size(LogicalSize::new(ONBOARDING_WIDTH, ONBOARDING_HEIGHT));
         let _ = win.set_resizable(false);
         let _ = win.center();
-        platform::ensure_floating_overlay("Thocci", target_w, target_h, true, false);
+        platform::ensure_floating_overlay("Thocci", desired_w, desired_h, true, false);
     }
 }
 
@@ -705,11 +735,21 @@ pub fn run() {
             let layer_enabled = {
                 let (mon_w, mon_h) =
                     layer_shell::current_monitor_logical_size().unwrap_or((1920, 1080));
+                let (fit_w, fit_h) = if ui_prefs.onboarding_completed {
+                    prefs::fit_dashboard_size_to_work_area(
+                        init_w,
+                        init_h,
+                        mon_w.max(320) as u32,
+                        mon_h.max(320) as u32,
+                    )
+                } else {
+                    (init_w, init_h)
+                };
                 let main_rect = layer_shell::PanelRect {
-                    x: ((mon_w - init_w as i32) / 2).max(0),
-                    y: ((mon_h - init_h as i32) / 2).max(0),
-                    width: init_w as i32,
-                    height: init_h as i32,
+                    x: ((mon_w - fit_w as i32) / 2).max(0),
+                    y: ((mon_h - fit_h as i32) / 2).max(0),
+                    width: fit_w as i32,
+                    height: fit_h as i32,
                 };
                 app.get_webview_window("main")
                     .map(|w| {
@@ -826,6 +866,7 @@ pub fn run() {
             open_dashboard,
             open_quick_actions,
             hide_quick_actions,
+            minimize_window,
             quit_app,
         ])
         .run(tauri::generate_context!())
