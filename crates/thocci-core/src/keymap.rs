@@ -60,9 +60,10 @@ pub fn dom_code_zone(code: &str) -> KeyZone {
         .unwrap_or(KeyZone::Center)
 }
 
-/// Keys that never click: Caps/Num/Scroll Lock and the Super/Windows/Command keys.
+/// Keys that never click: Caps/Num/Scroll Lock, Super/Windows/Command keys,
+/// and non-typing scroll/zoom/scale events (`KEY_SCALE`, `KEY_SCROLLUP`, `KEY_SCROLLDOWN`).
 pub fn is_ignored(linux_code: u16) -> bool {
-    matches!(linux_code, 58 | 69 | 70 | 125 | 126)
+    matches!(linux_code, 58 | 69 | 70 | 120 | 125 | 126 | 177 | 178)
 }
 
 /// Linux keycode -> libuiohook keycode used in v1 pack `defines`.
@@ -496,7 +497,7 @@ mod tests {
 
     #[test]
     fn ignored_keys_match_mechy() {
-        for code in [58, 69, 70, 125, 126] {
+        for code in [58, 69, 70, 120, 125, 126, 177, 178] {
             assert!(is_ignored(code));
         }
         assert!(!is_ignored(KEY_A));

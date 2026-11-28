@@ -1,10 +1,11 @@
 //! Windows keyboard capture via `SetWindowsHookExW(WH_KEYBOARD_LL)`.
 //!
-//! Tracks held keys so Windows auto-repeat does not spam clicks while holding a
-//! key down, emits both press (`Down`) and release (`Up`) events, and translates
-//! Set 1 scan codes + `LLKHF_EXTENDED` flags into Linux evdev keycodes.
+//! Filters out injected/synthetic keyboard events (such as Windows Precision
+//! Touchpad pinch-to-zoom `Ctrl` synthesis and multi-finger gesture shortcuts),
+//! tracks held physical keys so Windows auto-repeat and stray releases do not
+//! spam clicks, emits both press (`Down`) and release (`Up`) events, and
+//! translates Set 1 scan codes + `LLKHF_EXTENDED` flags into Linux evdev keycodes.
 
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -15,17 +16,15 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG,
-    WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_QUIT,
 };
 
-use crate::input::{KeyCallback, KeyEvent, KeyEventKind, KeyListener};
-use crate::keymap;
+use crate::input::{KeyCallback, KeyListener, WindowsHookEvent, WindowsKeyState};
 use crate::{Error, Result};
 
 struct HookState {
     callback: Option<KeyCallback>,
-    pressed: HashSet<u16>,
+    keys: WindowsKeyState,
 }
 
 static HOOK_STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
@@ -34,7 +33,7 @@ fn hook_state() -> &'static Mutex<HookState> {
     HOOK_STATE.get_or_init(|| {
         Mutex::new(HookState {
             callback: None,
-            pressed: HashSet::new(),
+            keys: WindowsKeyState::new(),
         })
     })
 }
@@ -58,7 +57,7 @@ impl KeyListener for WindowsHookListener {
         {
             let mut state = hook_state().lock().unwrap_or_else(|e| e.into_inner());
             state.callback = Some(on_key);
-            state.pressed.clear();
+            state.keys.clear();
         }
 
         let (ready_tx, ready_rx) = mpsc::channel::<Result<()>>();
@@ -100,7 +99,7 @@ impl KeyListener for WindowsHookListener {
         }
         let mut state = hook_state().lock().unwrap_or_else(|e| e.into_inner());
         state.callback = None;
-        state.pressed.clear();
+        state.keys.clear();
     }
 }
 
@@ -143,41 +142,26 @@ unsafe extern "system" fn low_level_keyboard_proc(
 ) -> LRESULT {
     if code >= 0 && lparam != 0 {
         let info = &*(lparam as *const KBDLLHOOKSTRUCT);
-        let msg = wparam as u32;
-        let extended = (info.flags & LLKHF_EXTENDED) != 0;
-
-        if let Some(linux_code) = keymap::windows_to_linux(info.vkCode, info.scanCode, extended) {
-            if !keymap::is_ignored(linux_code) {
-                dispatch_key_event(msg, linux_code);
-            }
-        }
+        dispatch_hook_event(WindowsHookEvent {
+            msg: wparam as u32,
+            vk_code: info.vkCode,
+            scan_code: info.scanCode,
+            flags: info.flags,
+        });
     }
     CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
 }
 
-fn dispatch_key_event(msg: u32, linux_code: u16) {
+fn dispatch_hook_event(raw: WindowsHookEvent) {
     let event_and_cb = {
         let mut state = hook_state().lock().unwrap_or_else(|e| e.into_inner());
-        match msg {
-            WM_KEYDOWN | WM_SYSKEYDOWN => {
-                // Ignore OS key auto-repeat while the key is already held down.
-                if !state.pressed.insert(linux_code) {
-                    return;
-                }
-                state.callback.clone().map(|cb| (cb, KeyEventKind::Down))
-            }
-            WM_KEYUP | WM_SYSKEYUP => {
-                state.pressed.remove(&linux_code);
-                state.callback.clone().map(|cb| (cb, KeyEventKind::Up))
-            }
-            _ => None,
-        }
+        let Some(event) = state.keys.process(raw) else {
+            return;
+        };
+        state.callback.clone().map(|cb| (cb, event))
     };
 
-    if let Some((cb, kind)) = event_and_cb {
-        cb(KeyEvent {
-            code: linux_code,
-            kind,
-        });
+    if let Some((cb, event)) = event_and_cb {
+        cb(event);
     }
 }

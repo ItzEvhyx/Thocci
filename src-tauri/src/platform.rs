@@ -14,6 +14,7 @@ pub struct PixelRect {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlatformInfo {
+    pub app_version: String,
     pub os: String,
     pub arch: String,
     pub session_type: Option<String>,
@@ -124,6 +125,7 @@ pub fn fallback_popover_position(
 }
 
 pub fn collect_platform_info(tray_available: bool, daemon_exe: &Path) -> PlatformInfo {
+    let app_version = thocci_core::VERSION.to_owned();
     let os = std::env::consts::OS.to_owned();
     let arch = std::env::consts::ARCH.to_owned();
     let daemon_path = daemon_exe.display().to_string();
@@ -131,6 +133,7 @@ pub fn collect_platform_info(tray_available: bool, daemon_exe: &Path) -> Platfor
     #[cfg(target_os = "macos")]
     {
         PlatformInfo {
+            app_version,
             os,
             arch,
             session_type: Some("aqua".to_owned()),
@@ -153,6 +156,7 @@ pub fn collect_platform_info(tray_available: bool, daemon_exe: &Path) -> Platfor
         let session_type = detect_linux_session();
         let input_ready = check_linux_input_access();
         PlatformInfo {
+            app_version,
             os,
             arch,
             session_type,
@@ -173,6 +177,7 @@ pub fn collect_platform_info(tray_available: bool, daemon_exe: &Path) -> Platfor
     #[cfg(windows)]
     {
         PlatformInfo {
+            app_version,
             os,
             arch,
             session_type: Some("win32".to_owned()),

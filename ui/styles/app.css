@@ -2727,6 +2727,10 @@ body[data-layer-backdrop="true"] .qa-shell {
   animation: shell-intro-group 240ms ease-out 185ms both;
 }
 
+.modal-backdrop.is-entering .guide-section:nth-of-type(6) {
+  animation: shell-intro-group 240ms ease-out 220ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop.is-entering,
   .modal-backdrop.is-closing,
@@ -2808,6 +2812,95 @@ body[data-layer-backdrop="true"] .qa-shell {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.guide-version-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.guide-version-title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-version-title-group h3 {
+  margin: 0;
+}
+
+.guide-version-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.guide-version-compare {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.guide-changelog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guide-changelog-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.guide-change-tag {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.guide-change-tag--added {
+  background: rgba(34, 197, 94, 0.14);
+  color: #15803D;
+}
+
+:root[data-theme="dark"] .guide-change-tag--added {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ADE80;
+}
+
+.guide-change-tag--changed {
+  background: var(--bg-soft);
+  color: var(--accent);
+}
+
+.guide-change-tag--removed {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.guide-changelog-list {
+  margin: 0 !important;
 }
 
 .guide-code {

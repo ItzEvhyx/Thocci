@@ -130,6 +130,13 @@ fn handle_event(
     prev_flags: &AtomicU64,
     on_key: &KeyCallback,
 ) {
+    // Ignore software-synthesized keyboard events posted by user-space apps
+    // (such as trackpad zoom/gesture utilities). Physical HID keyboards always
+    // report source PID 0.
+    if event.get_integer_value_field(EventField::EVENT_SOURCE_UNIX_PROCESS_ID) != 0 {
+        return;
+    }
+
     let raw_key = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
     let Ok(mac_key) = u16::try_from(raw_key) else {
         return;

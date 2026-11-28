@@ -7,10 +7,12 @@ import { fileURLToPath } from "node:url";
 import { api } from "../src/bridge.js";
 import { KeyHoldTracker } from "../src/keyboard.js";
 import {
+  APP_RELEASE_NOTES,
   filterCatalog,
   groupCatalogBySource,
   isPointerBlurControl,
   isTextEditableElement,
+  renderSetupGuideReleaseSection,
 } from "../src/dashboard.js";
 import {
   computeQuickActionsGaze,
@@ -704,4 +706,41 @@ test("favourites, pin icons, silent onboarding, and flat warning feedback match 
     cssSrc,
     /^\.theme-pill\s*\{[\s\S]*border-radius:\s*var\(--radius-pill\);[\s\S]*background:\s*var\(--bg-raised\);/m,
   );
+});
+
+test("setup guide displays current app version and Added/Changed/Removed changelog at the top", async () => {
+  assert.equal(APP_RELEASE_NOTES.version, "1.1.1");
+  assert.equal(APP_RELEASE_NOTES.previousVersion, "1.1.0");
+  assert.ok(APP_RELEASE_NOTES.added.length > 0);
+  assert.ok(APP_RELEASE_NOTES.changed.length > 0);
+  assert.ok(APP_RELEASE_NOTES.removed.length > 0);
+
+  const sectionHtml = renderSetupGuideReleaseSection("1.1.1");
+  assert.match(sectionHtml, /class="guide-version-pill">v1\.1\.1</);
+  assert.match(sectionHtml, /Changes from v1\.1\.0/);
+  assert.match(sectionHtml, /guide-change-tag--added">Added</);
+  assert.match(sectionHtml, /guide-change-tag--changed">Changed</);
+  assert.match(sectionHtml, /guide-change-tag--removed">Removed</);
+  assert.match(sectionHtml, /pinch-to-zoom/i);
+
+  const dashboardSrc = fs.readFileSync(path.join(root, "ui", "src", "dashboard.js"), "utf8");
+  const releaseIdx = dashboardSrc.indexOf("${renderSetupGuideReleaseSection(currentAppVersion)}");
+  const statusIdx = dashboardSrc.indexOf("<h3>System status</h3>");
+  assert.ok(
+    releaseIdx > 0 && statusIdx > releaseIdx,
+    "version & release notes section must appear before System status at the top of Setup guide",
+  );
+
+  const prevWindow = globalThis.window;
+  globalThis.window = {};
+  try {
+    const platform = await api.getPlatformInfo();
+    assert.equal(platform.app_version, "1.1.1");
+  } finally {
+    if (prevWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = prevWindow;
+    }
+  }
 });

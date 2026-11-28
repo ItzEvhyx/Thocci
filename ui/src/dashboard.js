@@ -23,6 +23,60 @@ import { mountSidebarTrinket } from "./sidebar-trinket.js";
 import { mountMascotStage } from "./stage.js";
 import { mountTypingGame } from "./typing-game.js";
 
+export const APP_RELEASE_NOTES = {
+  version: "1.1.1",
+  previousVersion: "1.1.0",
+  added: [
+    "Favourites pinning: pin up to 10 built-in or imported soundpacks in the Soundpacks sidebar.",
+    "Quick Actions Pinned drawer: expand pinned soundpacks as keycap cards straight from the tray popover.",
+    "Version & changelog summary at the top of this Setup guide.",
+  ],
+  changed: [
+    "Trackpad zoom & gesture filtering: Windows trackpad pinch-to-zoom and synthetic gesture events no longer trigger phantom clicks.",
+    "Adaptive OS tray mark: switches between black and white Thocci icons to match light or dark taskbars and panels.",
+    "Silent startup & engine lifecycle: stays silent on launch until explicitly enabled, spawns the version-matched daemon, and stops cleanly on disable or quit.",
+  ],
+  removed: [
+    "Unsolicited onboarding Spacebar click when finishing setup, plus preview audio while Thocci is disabled.",
+  ],
+};
+
+export function renderSetupGuideReleaseSection(appVersion, releaseNotes = APP_RELEASE_NOTES) {
+  const currentVersion = String(appVersion || releaseNotes.version || "1.1.1").replace(/^v/i, "");
+  const prevVersion = String(releaseNotes.previousVersion || "").replace(/^v/i, "");
+  const groups = [
+    { key: "added", label: "Added", items: releaseNotes.added || [] },
+    { key: "changed", label: "Changed", items: releaseNotes.changed || [] },
+    { key: "removed", label: "Removed", items: releaseNotes.removed || [] },
+  ].filter((group) => group.items.length > 0);
+
+  return `
+    <section class="guide-section guide-version-section" aria-label="App version and release notes">
+      <div class="guide-version-header">
+        <div class="guide-version-title-group">
+          <h3>Version</h3>
+          <span class="guide-version-pill">v${escapeHtml(currentVersion)}</span>
+        </div>
+        ${prevVersion ? `<span class="guide-version-compare">Changes from v${escapeHtml(prevVersion)}</span>` : ""}
+      </div>
+      <div class="guide-changelog">
+        ${groups
+          .map(
+            (group) => `
+              <div class="guide-changelog-group">
+                <span class="guide-change-tag guide-change-tag--${group.key}">${group.label}</span>
+                <ul class="guide-changelog-list">
+                  ${group.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+                </ul>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
 export function isTextEditableElement(el) {
   if (!el || typeof el.tagName !== "string") return false;
   const tag = el.tagName.toUpperCase();
@@ -1859,6 +1913,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       modalAnimTimer = null;
     }
     const info = platformInfo || {
+      app_version: APP_RELEASE_NOTES.version,
       os: "desktop",
       arch: "",
       session_type: "unknown",
@@ -1868,6 +1923,9 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       permission_title: "Keyboard access",
       permission_steps: ["Grant keyboard monitoring access for background sounds."],
     };
+
+    const currentAppVersion =
+      info.app_version || availableUpdate?.currentVersion || APP_RELEASE_NOTES.version;
 
     const permBadge =
       info.input_permission_ready === true
@@ -1885,6 +1943,8 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           <button id="guideCloseTop" type="button" class="modal-close" aria-label="Close setup guide">×</button>
         </header>
         <div class="modal-body">
+          ${renderSetupGuideReleaseSection(currentAppVersion)}
+
           <section class="guide-section">
             <h3>System status</h3>
             <div class="guide-diag-grid">
