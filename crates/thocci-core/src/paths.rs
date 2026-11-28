@@ -76,6 +76,10 @@ pub fn port_file() -> PathBuf {
     state_dir().join("control.port")
 }
 
+pub fn owner_file() -> PathBuf {
+    state_dir().join("daemon.owner")
+}
+
 pub fn log_file() -> PathBuf {
     state_dir().join("thocci.log")
 }
@@ -100,7 +104,24 @@ fn read_trimmed(path: PathBuf) -> Option<String> {
 
 fn write_value(path: PathBuf, value: &str) -> io::Result<()> {
     ensure_state_dir()?;
-    fs::write(path, value)
+    #[cfg(unix)]
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let seq = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("state");
+        let tmp = path.with_file_name(format!(".{file_name}.tmp.{}.{seq}", std::process::id()));
+        fs::write(&tmp, value)?;
+        if let Err(err) = fs::rename(&tmp, &path) {
+            let _ = fs::remove_file(&tmp);
+            return Err(err);
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, value)
+    }
 }
 
 /// Saved volume percent (0-100). Defaults to 100 like Mechy.
@@ -164,6 +185,45 @@ pub fn read_control_port() -> u16 {
 
 pub fn write_control_port(port: u16) -> io::Result<()> {
     write_value(port_file(), &port.to_string())
+}
+
+/// Identifies whether a running daemon was started intentionally by the CLI
+/// (`thocci on`) or owned by a specific desktop app process (`thocci-app`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionOwner {
+    Cli,
+    Desktop(u32),
+}
+
+impl SessionOwner {
+    pub fn to_tag(self) -> String {
+        match self {
+            Self::Cli => "cli".to_owned(),
+            Self::Desktop(pid) => format!("desktop:{pid}"),
+        }
+    }
+
+    pub fn parse_tag(raw: &str) -> Option<Self> {
+        let trimmed = raw.trim();
+        if trimmed.eq_ignore_ascii_case("cli") {
+            return Some(Self::Cli);
+        }
+        if let Some(pid_str) = trimmed.strip_prefix("desktop:") {
+            let pid = pid_str.trim().parse::<u32>().ok()?;
+            if pid > 0 {
+                return Some(Self::Desktop(pid));
+            }
+        }
+        None
+    }
+}
+
+pub fn read_daemon_owner() -> Option<SessionOwner> {
+    read_trimmed(owner_file()).and_then(|raw| SessionOwner::parse_tag(&raw))
+}
+
+pub fn write_daemon_owner(owner: SessionOwner) -> io::Result<()> {
+    write_value(owner_file(), &owner.to_tag())
 }
 
 pub fn read_pid_file() -> Option<u32> {

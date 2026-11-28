@@ -135,6 +135,8 @@ pub async fn install_pending_update(app: AppHandle<Wry>) -> Result<(), String> {
     {
         let state = app.state::<AppState>();
         state.is_quitting.store(true, Ordering::Release);
+        state.playback_enabled.store(false, Ordering::Release);
+        state.preview.quiesce();
         crate::tray::shutdown_tray(&app).await;
         let lock = Arc::clone(&state.engine_lock);
         let preview = Arc::clone(&state.preview);
@@ -147,9 +149,10 @@ pub async fn install_pending_update(app: AppHandle<Wry>) -> Result<(), String> {
     }
 
     if let Err(err) = update.install(bytes) {
-        app.state::<AppState>()
-            .is_quitting
-            .store(false, Ordering::Release);
+        let state = app.state::<AppState>();
+        state.is_quitting.store(false, Ordering::Release);
+        state.playback_enabled.store(false, Ordering::Release);
+        state.preview.quiesce();
         return Err(format!("Update installation failed: {err}"));
     }
 

@@ -9,9 +9,9 @@ use serde::Serialize;
 
 use crate::control::send_command;
 use crate::paths::{
-    clamp_percent, ensure_state_dir, log_file, parse_stereo_flag, pid_file, port_file,
-    read_pid_file, read_saved_pack, read_saved_stereo, read_saved_volume, remove_if_exists,
-    write_saved_pack, write_saved_stereo, write_saved_volume,
+    clamp_percent, ensure_state_dir, log_file, owner_file, parse_stereo_flag, pid_file, port_file,
+    read_daemon_owner, read_pid_file, read_saved_pack, read_saved_stereo, read_saved_volume,
+    remove_if_exists, write_saved_pack, write_saved_stereo, write_saved_volume, SessionOwner,
 };
 use crate::process::{pid_is_running, spawn_detached, terminate_pid};
 use crate::soundpack::{
@@ -38,6 +38,9 @@ pub struct DaemonStatus {
 pub struct StartOptions {
     pub pack_dir: Option<PathBuf>,
     pub volume: Option<i64>,
+    /// Optional owning desktop app PID. When set, the spawned daemon is tagged
+    /// as desktop-owned and exits automatically if the owner process dies.
+    pub owner_pid: Option<u32>,
 }
 
 /// Return the PID of a live daemon, cleaning up a stale PID file if needed.
@@ -47,8 +50,47 @@ pub fn running_pid() -> Option<u32> {
         Some(pid)
     } else {
         remove_if_exists(pid_file());
+        remove_if_exists(port_file());
+        remove_if_exists(owner_file());
         None
     }
+}
+
+/// Inspect the ownership of a currently running daemon, if any.
+pub fn running_owner() -> Option<SessionOwner> {
+    let _pid = running_pid()?;
+    if let Some(reply) = send_command("status", Duration::from_millis(500)) {
+        if let Some(owner) = parse_owner_from_status_reply(&reply) {
+            return Some(owner);
+        }
+    }
+    read_daemon_owner()
+}
+
+/// Reconcile pre-existing daemon state on desktop app launch:
+/// - Cleans up stale PID/port/owner files if no daemon process is alive.
+/// - Stops a stale desktop-owned daemon whose previous owning `thocci-app` PID
+///   has already exited (e.g. after a crash, force kill, or upgrade).
+/// - Leaves an intentionally CLI-started (`thocci on`) session running so the
+///   desktop UI reconciles with it rather than killing or duplicating it.
+///
+/// Returns `true` if a stale desktop-owned daemon was stopped.
+pub fn reconcile_stale_desktop_session(current_desktop_pid: u32) -> bool {
+    let Some(_daemon_pid) = running_pid() else {
+        remove_if_exists(pid_file());
+        remove_if_exists(port_file());
+        remove_if_exists(owner_file());
+        return false;
+    };
+
+    if let Some(SessionOwner::Desktop(owner_pid)) = running_owner() {
+        if owner_pid != current_desktop_pid && !pid_is_running(owner_pid) {
+            log::info!("Stopping stale desktop-owned Thocci daemon (dead owner pid {owner_pid})");
+            let _ = stop();
+            return true;
+        }
+    }
+    false
 }
 
 /// Query the live daemon (or fall back to saved settings if stopped).
@@ -111,9 +153,10 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     }
 
     ensure_state_dir()?;
-    // Clear any stale control/PID files left behind by a previous crashed or killed daemon.
+    // Clear any stale control/PID/owner files left behind by a previous crashed or killed daemon.
     remove_if_exists(pid_file());
     remove_if_exists(port_file());
+    remove_if_exists(owner_file());
 
     if let Some(dir) = &options.pack_dir {
         if !dir.join("config.json").is_file() {
@@ -149,6 +192,10 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     } else {
         args.push("--pack-id".to_owned());
         args.push(pack_id.clone());
+    }
+    if let Some(owner_pid) = options.owner_pid.filter(|&pid| pid > 0) {
+        args.push("--owner-pid".to_owned());
+        args.push(owner_pid.to_string());
     }
 
     let log_path = log_file();
@@ -189,6 +236,7 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     let _ = child.wait();
     remove_if_exists(pid_file());
     remove_if_exists(port_file());
+    remove_if_exists(owner_file());
 
     let tail = read_log_tail(&log_path, 8);
     let detail = if tail.is_empty() {
@@ -208,6 +256,7 @@ pub fn stop() -> Result<bool> {
     let Some(pid) = running_pid() else {
         remove_if_exists(pid_file());
         remove_if_exists(port_file());
+        remove_if_exists(owner_file());
         return Ok(false);
     };
 
@@ -220,6 +269,7 @@ pub fn stop() -> Result<bool> {
         if running_pid().is_none() {
             remove_if_exists(pid_file());
             remove_if_exists(port_file());
+            remove_if_exists(owner_file());
             return Ok(true);
         }
     }
@@ -227,6 +277,7 @@ pub fn stop() -> Result<bool> {
     let _ = terminate_pid(pid, true);
     remove_if_exists(pid_file());
     remove_if_exists(port_file());
+    remove_if_exists(owner_file());
     Ok(true)
 }
 
@@ -320,6 +371,16 @@ pub fn list_builtin_packs() -> &'static [BuiltinPackMeta] {
 
 pub fn list_all_packs() -> Vec<PackCatalogEntry> {
     soundpack::list_all_packs()
+}
+
+fn parse_owner_from_status_reply(reply: &str) -> Option<SessionOwner> {
+    let rest = reply.strip_prefix("OK")?.trim();
+    for token in rest.split_whitespace() {
+        if let Some(val) = token.strip_prefix("owner=") {
+            return SessionOwner::parse_tag(val);
+        }
+    }
+    None
 }
 
 fn parse_status_reply(
@@ -464,5 +525,43 @@ mod tests {
         let after_off = status();
         assert!(!after_off.stereo);
         assert!(!after_off.saved_stereo);
+    }
+
+    #[test]
+    fn session_owner_tags_round_trip_and_parse_from_status() {
+        assert_eq!(SessionOwner::Cli.to_tag(), "cli");
+        assert_eq!(SessionOwner::parse_tag("cli"), Some(SessionOwner::Cli));
+        assert_eq!(SessionOwner::Desktop(1234).to_tag(), "desktop:1234");
+        assert_eq!(
+            SessionOwner::parse_tag("desktop:1234"),
+            Some(SessionOwner::Desktop(1234))
+        );
+        assert_eq!(SessionOwner::parse_tag("desktop:0"), None);
+        assert_eq!(SessionOwner::parse_tag("unknown"), None);
+
+        assert_eq!(
+            parse_owner_from_status_reply(
+                "OK running volume=80 pack=creamy stereo=off owner=desktop:999"
+            ),
+            Some(SessionOwner::Desktop(999))
+        );
+        assert_eq!(
+            parse_owner_from_status_reply("OK running volume=80 pack=creamy stereo=on owner=cli"),
+            Some(SessionOwner::Cli)
+        );
+    }
+
+    #[test]
+    fn reconcile_cleans_stale_files_when_no_daemon_running() {
+        let _guard = test_support::isolated_state();
+        // Write a dead PID + owner + port file and verify reconciliation cleans them up.
+        std::fs::write(paths::pid_file(), "999999").unwrap();
+        std::fs::write(paths::port_file(), "24732").unwrap();
+        paths::write_daemon_owner(SessionOwner::Desktop(888888)).unwrap();
+
+        assert!(!reconcile_stale_desktop_session(std::process::id()));
+        assert!(!paths::pid_file().exists());
+        assert!(!paths::port_file().exists());
+        assert!(!paths::owner_file().exists());
     }
 }

@@ -45,6 +45,14 @@ fn parse_daemon_args(args: &[String]) -> DaemonConfig {
                 }
                 i += 2;
             }
+            "--owner-pid" if i + 1 < args.len() => {
+                if let Ok(pid) = args[i + 1].parse::<u32>() {
+                    if pid > 0 {
+                        config.owner_pid = Some(pid);
+                    }
+                }
+                i += 2;
+            }
             _ => i += 1,
         }
     }

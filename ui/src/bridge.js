@@ -14,12 +14,42 @@ export function isTauriRuntime() {
   return typeof tauriInvoke() === "function";
 }
 
+const MOCK_PINS_KEY = "thocci:preview:pinned_packs";
+
+function previewStorage() {
+  if (typeof document === "undefined") return null;
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function loadMockPins() {
+  try {
+    const raw = previewStorage()?.getItem(MOCK_PINS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMockPins(pins) {
+  try {
+    previewStorage()?.setItem(MOCK_PINS_KEY, JSON.stringify(pins));
+  } catch {
+    // Non-browser test environments have no localStorage.
+  }
+}
+
 // Local mock state used only when previewing ui/index.html outside Tauri.
 const mockState = {
   status: {
-    running: true,
-    responsive: true,
-    pid: 4242,
+    running: false,
+    responsive: false,
+    pid: null,
     volume: 55,
     pack: "creamy",
     stereo: false,
@@ -33,6 +63,7 @@ const mockState = {
     animate_mascot: true,
     window_width: null,
     window_height: null,
+    pinned_packs: loadMockPins(),
   },
   catalog: [
     { id: "cherry-mx", display_name: "Cherry MX Black", subtitle: "Linear · ABS keycaps", raw_name: "CherryMX Black - ABS keycaps", origin: "builtin", is_default: true },
@@ -84,22 +115,52 @@ async function call(cmd, args = {}) {
       return { ...mockState.status };
     }
     case "get_ui_prefs":
-      return { ...mockState.prefs };
+      return { ...mockState.prefs, pinned_packs: [...mockState.prefs.pinned_packs] };
     case "save_ui_prefs":
       mockState.prefs = { ...mockState.prefs, ...args.prefsUpdate };
-      return { ...mockState.prefs };
+      return { ...mockState.prefs, pinned_packs: [...mockState.prefs.pinned_packs] };
+    case "set_pack_pinned": {
+      const id = String(args.packId ?? "").trim();
+      const pinned = Boolean(args.pinned);
+      const list = [...mockState.prefs.pinned_packs];
+      if (!pinned) {
+        const idx = list.indexOf(id);
+        if (idx === -1) {
+          return { prefs: { ...mockState.prefs, pinned_packs: list }, status: "unchanged" };
+        }
+        list.splice(idx, 1);
+        mockState.prefs.pinned_packs = list;
+        saveMockPins(list);
+        return { prefs: { ...mockState.prefs, pinned_packs: [...list] }, status: "unpinned" };
+      }
+      if (!mockState.catalog.some((p) => p.id === id)) {
+        throw new Error(`Unknown soundpack '${id}'.`);
+      }
+      if (list.includes(id)) {
+        return { prefs: { ...mockState.prefs, pinned_packs: list }, status: "unchanged" };
+      }
+      if (list.length >= 10) {
+        return { prefs: { ...mockState.prefs, pinned_packs: list }, status: "limit" };
+      }
+      list.push(id);
+      mockState.prefs.pinned_packs = list;
+      saveMockPins(list);
+      return { prefs: { ...mockState.prefs, pinned_packs: [...list] }, status: "pinned" };
+    }
     case "set_window_size":
       mockState.prefs = {
         ...mockState.prefs,
         window_width: args.width ?? null,
         window_height: args.height ?? null,
       };
-      return { ...mockState.prefs };
+      return { ...mockState.prefs, pinned_packs: [...mockState.prefs.pinned_packs] };
     case "complete_onboarding":
       mockState.prefs.onboarding_completed = true;
-      return { ...mockState.prefs };
+      return { ...mockState.prefs, pinned_packs: [...mockState.prefs.pinned_packs] };
     case "play_preview":
-      return mockState.status.volume > 0;
+      return Boolean(mockState.status.running && mockState.status.responsive && mockState.status.volume > 0);
+    case "set_quick_actions_height":
+      return Math.max(320, Math.min(600, Math.round(Number(args.height) || 320)));
     case "get_platform_info":
       return {
         os: "linux",
@@ -123,7 +184,7 @@ async function call(cmd, args = {}) {
     case "check_for_update":
       return {
         available: false,
-        currentVersion: "1.1.0",
+        currentVersion: "1.1.1",
         version: null,
         notes: null,
       };
@@ -148,12 +209,14 @@ export const api = {
   playPreview: (code = null, kind = "down") => call("play_preview", { code, kind }),
   getUiPrefs: () => call("get_ui_prefs"),
   saveUiPrefs: (prefsUpdate) => call("save_ui_prefs", { prefsUpdate }),
+  setPackPinned: (packId, pinned) => call("set_pack_pinned", { packId, pinned }),
   setWindowSize: (width, height) => call("set_window_size", { width, height }),
   getOverlayPlacement: () => call("get_overlay_placement"),
   setOverlayInputFullscreen: (fullscreen) => call("set_overlay_input_fullscreen", { fullscreen }),
   setOverlayRect: (x, y, width, height, persistSize = false) =>
     call("set_overlay_rect", { x, y, width, height, persistSize }),
   getQuickActionsPlacement: () => call("get_quick_actions_placement"),
+  setQuickActionsHeight: (height) => call("set_quick_actions_height", { height }),
   completeOnboarding: () => call("complete_onboarding"),
   getPlatformInfo: () => call("get_platform_info"),
   openDashboard: (route = null) => call("open_dashboard", { route }),

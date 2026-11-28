@@ -86,6 +86,9 @@ pub struct QuickActionsPlacement {
     pub screen_width: i32,
     #[serde(rename = "screenHeight")]
     pub screen_height: i32,
+    #[serde(rename = "maxHeight")]
+    pub max_height: i32,
+    pub animate: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,8 +116,16 @@ struct SurfaceSpec {
     input_fullscreen: bool,
     /// Only used for `BarPopup`: top bar height punched out of the input region.
     top_bar_hole_height: i32,
-    /// Only used for `BarPopup`: `(x, y)` of the 288x282 popup card inside the overlay.
+    /// Only used for `BarPopup`: bottom bar height punched out of the input region.
+    bottom_bar_hole_height: i32,
+    /// Only used for `BarPopup`: `(x, y)` of the popup card inside the overlay.
     popup_card_pos: (i32, i32),
+    /// Only used for `BarPopup`: `(w, h)` of the popup card inside the overlay.
+    popup_card_size: (i32, i32),
+    /// Only used for `BarPopup`: whether the popup is anchored above a bottom panel.
+    popup_anchored_bottom: bool,
+    /// Only used for `BarPopup`: maximum logical height that fits in the monitor work area.
+    popup_max_height: i32,
 }
 
 struct ActiveSurface {
@@ -362,6 +373,7 @@ fn process_pending_events(rt: &mut LayerShellRuntime) -> Vec<gtk::ApplicationWin
                                 target_w as i32,
                                 target_h as i32,
                                 spec.top_bar_hole_height,
+                                spec.bottom_bar_hole_height,
                             );
                             if let Some(app) = rt.app_handle.as_ref() {
                                 let _ = app.emit_to(
@@ -373,6 +385,8 @@ fn process_pending_events(rt: &mut LayerShellRuntime) -> Vec<gtk::ApplicationWin
                                         y: spec.popup_card_pos.1,
                                         screen_width: target_w as i32,
                                         screen_height: target_h as i32,
+                                        max_height: spec.popup_max_height,
+                                        animate: false,
                                     },
                                 );
                             }
@@ -546,6 +560,7 @@ fn apply_bar_popup_input_mask(
     screen_w: i32,
     screen_h: i32,
     top_bar_h: i32,
+    bottom_bar_h: i32,
 ) {
     let Some(gdk_win) = gtk_win.window() else {
         return;
@@ -556,6 +571,14 @@ fn apply_bar_popup_input_mask(
     let region = Region::create_rectangle(&RectangleInt::new(0, 0, screen_w, screen_h));
     if top_bar_h > 0 && top_bar_h < screen_h {
         let _ = region.subtract_rectangle(&RectangleInt::new(0, 0, screen_w, top_bar_h));
+    }
+    if bottom_bar_h > 0 && bottom_bar_h < screen_h {
+        let _ = region.subtract_rectangle(&RectangleInt::new(
+            0,
+            (screen_h - bottom_bar_h).max(0),
+            screen_w,
+            bottom_bar_h,
+        ));
     }
     gdk_win.input_shape_combine_region(&region, 0, 0);
 }
@@ -601,7 +624,11 @@ pub fn setup_window(
                     screen_height: mon_h,
                     input_fullscreen: false,
                     top_bar_hole_height: 0,
+                    bottom_bar_hole_height: 0,
                     popup_card_pos: (initial_rect.x, initial_rect.y),
+                    popup_card_size: (initial_rect.width, initial_rect.height),
+                    popup_anchored_bottom: false,
+                    popup_max_height: (mon_h - 60).max(320),
                 },
             );
             rt.windows.insert(label.clone(), gtk_win.clone());
@@ -777,15 +804,18 @@ pub fn center_panel(label: &str, width: i32, height: i32) -> PanelRect {
     rect
 }
 
-/// Prepare Quick Actions `BarPopup` placement and top-bar input hole before showing.
+/// Prepare Quick Actions `BarPopup` placement and bar input holes before showing.
 pub fn prepare_bar_popup(label: &str, card_w: i32, card_h: i32) -> QuickActionsPlacement {
-    let (mon_w, mon_h, top_bar_h, card_x, card_y) = compute_bar_popup_geometry(card_w, card_h);
+    let layout = compute_bar_popup_geometry(card_w, card_h);
+    let clamped_h = card_h.min(layout.max_h).max(320);
     let placement = QuickActionsPlacement {
         layer_shell: true,
-        x: card_x,
-        y: card_y,
-        screen_width: mon_w,
-        screen_height: mon_h,
+        x: layout.local_x,
+        y: layout.local_y,
+        screen_width: layout.mon_w,
+        screen_height: layout.mon_h,
+        max_height: layout.max_h,
+        animate: true,
     };
 
     LAYER_RUNTIME.with(|cell| {
@@ -794,21 +824,88 @@ pub fn prepare_bar_popup(label: &str, card_w: i32, card_h: i32) -> QuickActionsP
             return;
         };
         if let Some(spec) = rt.specs.get_mut(label) {
-            spec.top_bar_hole_height = top_bar_h;
-            spec.popup_card_pos = (card_x, card_y);
+            spec.top_bar_hole_height = layout.top_inset;
+            spec.bottom_bar_hole_height = layout.bottom_inset;
+            spec.popup_card_pos = (layout.local_x, layout.local_y);
+            spec.popup_card_size = (card_w, clamped_h);
+            spec.popup_anchored_bottom = layout.anchored_bottom;
+            spec.popup_max_height = layout.max_h;
             spec.rect = PanelRect {
                 x: 0,
                 y: 0,
-                width: mon_w,
-                height: mon_h,
+                width: layout.mon_w,
+                height: layout.mon_h,
             };
         }
         if let Some(gtk_win) = rt.windows.get(label) {
-            apply_bar_popup_input_mask(gtk_win, mon_w, mon_h, top_bar_h);
+            apply_bar_popup_input_mask(
+                gtk_win,
+                layout.mon_w,
+                layout.mon_h,
+                layout.top_inset,
+                layout.bottom_inset,
+            );
         }
     });
 
     placement
+}
+
+/// Resize an already-placed Quick Actions `BarPopup` while preserving its monitor
+/// and top/bottom panel anchor. Clamps height inside the monitor work area and
+/// updates the Wayland surface cleanly.
+pub fn resize_bar_popup(
+    label: &str,
+    card_w: i32,
+    card_h: i32,
+) -> Option<(QuickActionsPlacement, i32)> {
+    LAYER_RUNTIME.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        let rt = borrow.as_mut()?;
+        let spec = rt.specs.get_mut(label)?;
+        let gap = 8;
+        let max_h =
+            (spec.screen_height - spec.top_bar_hole_height - spec.bottom_bar_hole_height - 2 * gap)
+                .max(320);
+        let clamped_h = card_h.clamp(320, max_h);
+        let top_y = spec.top_bar_hole_height + gap;
+        let max_y = (spec.screen_height - spec.bottom_bar_hole_height - clamped_h - gap).max(top_y);
+        let next_y = if spec.popup_anchored_bottom {
+            max_y
+        } else {
+            spec.popup_card_pos.1.clamp(top_y, max_y)
+        };
+        let max_x = (spec.screen_width - card_w - 12).max(12);
+        let next_x = spec.popup_card_pos.0.clamp(12, max_x);
+
+        spec.popup_card_pos = (next_x, next_y);
+        spec.popup_card_size = (card_w, clamped_h);
+        spec.popup_max_height = max_h;
+
+        let placement = QuickActionsPlacement {
+            layer_shell: true,
+            x: next_x,
+            y: next_y,
+            screen_width: spec.screen_width,
+            screen_height: spec.screen_height,
+            max_height: max_h,
+            animate: false,
+        };
+        if let Some(gtk_win) = rt.windows.get(label) {
+            apply_bar_popup_input_mask(
+                gtk_win,
+                spec.screen_width,
+                spec.screen_height,
+                spec.top_bar_hole_height,
+                spec.bottom_bar_hole_height,
+            );
+        }
+        if let Some(active) = rt.active.get(label) {
+            active.wl_surface.commit();
+            let _ = rt.conn.flush();
+        }
+        Some((placement, clamped_h))
+    })
 }
 
 /// Query logical `(width, height)` of the focused monitor via GDK (works on all
@@ -816,8 +913,8 @@ pub fn prepare_bar_popup(label: &str, card_w: i32, card_h: i32) -> QuickActionsP
 pub fn current_monitor_logical_size() -> Option<(i32, i32)> {
     // Prefer Hyprland's focused monitor if available (GDK primary_monitor can lag
     // on multi-monitor Hyprland).
-    if let Some((w, h, _, _, _)) = query_hyprland_focused_monitor() {
-        return Some((w, h));
+    if let Some(layout) = query_hyprland_focused_monitor() {
+        return Some((layout.mon_w, layout.mon_h));
     }
     let display = gdk::Display::default()?;
     let monitor = display.primary_monitor().or_else(|| display.monitor(0))?;
@@ -825,20 +922,30 @@ pub fn current_monitor_logical_size() -> Option<(i32, i32)> {
     Some((geom.width(), geom.height()))
 }
 
-fn compute_bar_popup_geometry(card_w: i32, card_h: i32) -> (i32, i32, i32, i32, i32) {
-    if let Some((mon_w, mon_h, top_bar_h, x, y)) =
-        crate::platform::compute_hyprland_bar_popup_layout(card_w, card_h)
-    {
-        return (mon_w, mon_h, top_bar_h, x, y);
+fn compute_bar_popup_geometry(card_w: i32, card_h: i32) -> crate::platform::HyprlandBarPopupLayout {
+    if let Some(layout) = crate::platform::compute_hyprland_bar_popup_layout(card_w, card_h) {
+        return layout;
     }
     let (mon_w, mon_h) = current_monitor_logical_size().unwrap_or((1920, 1080));
-    let top_bar_h = 44;
-    let x = (mon_w - card_w - 12).max(12);
-    let y = top_bar_h + 8;
-    (mon_w, mon_h, top_bar_h, x, y)
+    let top_inset = 44;
+    let bottom_inset = 0;
+    let gap = 8;
+    let max_h = (mon_h - top_inset - bottom_inset - 2 * gap).max(320);
+    let local_x = (mon_w - card_w - 12).max(12);
+    let local_y = top_inset + gap;
+    crate::platform::HyprlandBarPopupLayout {
+        mon_w,
+        mon_h,
+        top_inset,
+        bottom_inset,
+        local_x,
+        local_y,
+        max_h,
+        anchored_bottom: false,
+    }
 }
 
-fn query_hyprland_focused_monitor() -> Option<(i32, i32, i32, i32, i32)> {
+fn query_hyprland_focused_monitor() -> Option<crate::platform::HyprlandBarPopupLayout> {
     std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")?;
-    crate::platform::compute_hyprland_bar_popup_layout(288, 282)
+    crate::platform::compute_hyprland_bar_popup_layout(288, 320)
 }

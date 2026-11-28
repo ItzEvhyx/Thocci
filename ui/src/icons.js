@@ -38,6 +38,8 @@ const UI_ICONS = [
   "settings",
   "setup-guide",
   "volume",
+  "pin",
+  "pin-filled",
 ];
 
 const iconMap = new Map();

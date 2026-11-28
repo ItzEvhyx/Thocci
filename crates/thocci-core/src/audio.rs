@@ -586,6 +586,11 @@ impl AudioEngine {
         }
     }
 
+    /// Immediately silence all active/queued voices without closing the stream.
+    pub fn clear(&self) {
+        self.shared.clear();
+    }
+
     pub fn shutdown(&self) {
         self.shared.clear();
         let mut guard = self.stream.lock().unwrap_or_else(|e| e.into_inner());

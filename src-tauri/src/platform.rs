@@ -61,6 +61,51 @@ pub fn compute_popover_position(
     (raw_x.clamp(min_x, max_x), raw_y.clamp(min_y, max_y))
 }
 
+/// Compute clamped physical-pixel geometry `(x, y, width, height, max_height)`
+/// for a Quick Actions popover on its actual tray monitor.
+///
+/// Handles top panels (macOS menu bar / Linux top bar), bottom panels (Windows
+/// taskbar / bottom Linux panel), short work areas, and mixed-DPI scaling.
+pub fn compute_popover_geometry(
+    anchor: Option<PixelRect>,
+    work_area: PixelRect,
+    desired_size: (i32, i32),
+    gap_px: i32,
+    margin_px: i32,
+) -> (i32, i32, i32, i32, i32) {
+    let max_w = (work_area.width - 2 * margin_px).max(1);
+    let work_max_h = (work_area.height - 2 * margin_px).max(1);
+
+    let max_h = match anchor {
+        Some(a) if a.width > 0 || a.height > 0 => {
+            let anchor_center_y = a.y + a.height / 2;
+            let work_mid_y = work_area.y + work_area.height / 2;
+            let work_bottom = work_area.y + work_area.height - margin_px;
+            let work_top = work_area.y + margin_px;
+            if anchor_center_y <= work_mid_y {
+                let top_start = (a.y + a.height + gap_px).max(work_top);
+                (work_bottom - top_start).max(1).min(work_max_h)
+            } else {
+                let bottom_end = (a.y - gap_px).min(work_bottom);
+                (bottom_end - work_top).max(1).min(work_max_h)
+            }
+        }
+        _ => work_max_h,
+    };
+
+    let pop_w = desired_size.0.min(max_w).max(1);
+    let pop_h = desired_size.1.min(max_h).max(1);
+
+    let (x, y) = match anchor {
+        Some(a) if a.width > 0 || a.height > 0 => {
+            compute_popover_position(a, work_area, (pop_w, pop_h), gap_px, margin_px)
+        }
+        _ => fallback_popover_position(work_area, (pop_w, pop_h), margin_px),
+    };
+
+    (x, y, pop_w, pop_h, max_h)
+}
+
 /// Default fallback placement when a tray anchor rect is unavailable (e.g. Linux
 /// indicator menu or Wayland window fallback).
 pub fn fallback_popover_position(
@@ -158,7 +203,7 @@ pub fn register_hyprland_window_rules(main_width: u32, main_height: u32) {
         let lua = format!(
             concat!(
                 r#"hl.window_rule({{ name = "thocci-main-overlay", match = {{ initial_title = "^Thocci$" }}, float = true, size = "{0} {1}", center = true, border_size = 0, no_shadow = true, no_blur = true, rounding = 27, opacity = "1.0 override" }}); "#,
-                r#"hl.window_rule({{ name = "thocci-quick-actions-popup", match = {{ initial_title = "^Thocci Quick Actions$" }}, float = true, size = "288 282", min_size = "288 282", max_size = "288 282", border_size = 0, no_shadow = true, no_blur = true, rounding = 28, opacity = "1.0 override" }})"#
+                r#"hl.window_rule({{ name = "thocci-quick-actions-popup", match = {{ initial_title = "^Thocci Quick Actions$" }}, float = true, size = "288 320", min_size = "288 320", max_size = "288 600", border_size = 0, no_shadow = true, no_blur = true, rounding = 28, opacity = "1.0 override" }})"#
             ),
             main_width, main_height
         );
@@ -344,31 +389,47 @@ fn float_on_hyprland(
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy)]
+pub struct HyprlandBarPopupLayout {
+    pub mon_w: i32,
+    pub mon_h: i32,
+    pub top_inset: i32,
+    pub bottom_inset: i32,
+    pub local_x: i32,
+    pub local_y: i32,
+    pub max_h: i32,
+    pub anchored_bottom: bool,
+}
+
+#[cfg(target_os = "linux")]
 struct HyprlandPopupMetrics {
     mon_x: i32,
     mon_y: i32,
     mon_w: i32,
     mon_h: i32,
     top_inset: i32,
+    bottom_inset: i32,
     px: i32,
     py: i32,
+    max_h: i32,
+    anchored_bottom: bool,
 }
 
-/// Compute `(mon_w, mon_h, top_bar_h, local_x, local_y)` on Hyprland for a
-/// bar-anchored popup card of size `(pop_w, pop_h)` inside a Wayland layer surface.
+/// Compute bar-anchored popup layout on Hyprland for a card of size `(pop_w, pop_h)`
+/// inside a Wayland layer surface.
 #[cfg(target_os = "linux")]
-pub fn compute_hyprland_bar_popup_layout(
-    pop_w: i32,
-    pop_h: i32,
-) -> Option<(i32, i32, i32, i32, i32)> {
+pub fn compute_hyprland_bar_popup_layout(pop_w: i32, pop_h: i32) -> Option<HyprlandBarPopupLayout> {
     let m = compute_hyprland_popup_metrics(pop_w, pop_h)?;
-    Some((
-        m.mon_w,
-        m.mon_h,
-        m.top_inset,
-        m.px - m.mon_x,
-        m.py - m.mon_y,
-    ))
+    Some(HyprlandBarPopupLayout {
+        mon_w: m.mon_w,
+        mon_h: m.mon_h,
+        top_inset: m.top_inset,
+        bottom_inset: m.bottom_inset,
+        local_x: m.px - m.mon_x,
+        local_y: m.py - m.mon_y,
+        max_h: m.max_h,
+        anchored_bottom: m.anchored_bottom,
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -452,17 +513,19 @@ fn compute_hyprland_popup_metrics(pop_w: i32, pop_h: i32) -> Option<HyprlandPopu
 
     let margin = 12;
     let gap = 8;
+    let max_h = (mon_h - top_inset - bottom_inset - 2 * gap).max(320);
+    let effective_h = pop_h.min(max_h);
     let min_x = mon_x + left_inset + margin;
     let max_x = (mon_x + mon_w - right_inset - pop_w - margin).max(min_x);
     let top_y = mon_y + top_inset + gap;
-    let bottom_y = (mon_y + mon_h - bottom_inset - pop_h - gap).max(top_y);
+    let bottom_y = (mon_y + mon_h - bottom_inset - effective_h - gap).max(top_y);
 
-    let (px, py) = if cy <= mon_y + top_inset + 180 {
-        ((cx - pop_w / 2).clamp(min_x, max_x), top_y)
+    let (px, py, anchored_bottom) = if cy <= mon_y + top_inset + 180 {
+        ((cx - pop_w / 2).clamp(min_x, max_x), top_y, false)
     } else if bottom_inset > 0 && cy >= mon_y + mon_h - bottom_inset - 180 {
-        ((cx - pop_w / 2).clamp(min_x, max_x), bottom_y)
+        ((cx - pop_w / 2).clamp(min_x, max_x), bottom_y, true)
     } else {
-        (max_x, top_y)
+        (max_x, top_y, false)
     };
 
     Some(HyprlandPopupMetrics {
@@ -471,8 +534,11 @@ fn compute_hyprland_popup_metrics(pop_w: i32, pop_h: i32) -> Option<HyprlandPopu
         mon_w,
         mon_h,
         top_inset,
+        bottom_inset,
         px,
         py,
+        max_h,
+        anchored_bottom,
     })
 }
 
@@ -635,5 +701,52 @@ mod tests {
         let (x, y) = compute_popover_position(tray, work, (288, 282), 8, 12);
         assert_eq!(x, -1920 + 12);
         assert_eq!(y, 32);
+    }
+
+    #[test]
+    fn popover_geometry_expands_upward_above_bottom_taskbar_and_clamps_short_work_area() {
+        // Bottom taskbar on 1920x1080 @ 150% DPI (work area 1920x1020)
+        let work = PixelRect {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1020,
+        };
+        let tray = PixelRect {
+            x: 1700,
+            y: 1028,
+            width: 36,
+            height: 36,
+        };
+        let (_, y_collapsed, w_c, h_c, _) =
+            compute_popover_geometry(Some(tray), work, (432, 480), 12, 18);
+        let (_, y_expanded, w_e, h_e, _) =
+            compute_popover_geometry(Some(tray), work, (432, 882), 12, 18);
+        assert_eq!((w_c, h_c), (432, 480));
+        assert_eq!((w_e, h_e), (432, 882));
+        // Bottom edge stays anchored at the same position above the taskbar.
+        assert_eq!(y_collapsed + h_c, y_expanded + h_e);
+        assert!(y_expanded >= work.y + 18);
+
+        // Short display work area (height 460px): clamps expanded 588px popover cleanly inside work area
+        let short_work = PixelRect {
+            x: 0,
+            y: 28,
+            width: 1280,
+            height: 460,
+        };
+        let top_tray = PixelRect {
+            x: 1200,
+            y: 0,
+            width: 24,
+            height: 28,
+        };
+        let (sx, sy, sw, sh, max_h) =
+            compute_popover_geometry(Some(top_tray), short_work, (288, 588), 8, 12);
+        assert_eq!(sw, 288);
+        assert!(sh <= max_h);
+        assert!(sy >= short_work.y + 12);
+        assert!(sy + sh <= short_work.y + short_work.height - 12);
+        assert!(sx + sw <= short_work.x + short_work.width - 12);
     }
 }

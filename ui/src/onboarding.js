@@ -132,7 +132,6 @@ export async function mountOnboarding(root, { onComplete }) {
     busy = true;
     cta.disabled = true;
     try {
-      void api.playPreview("Space", "down").catch(() => {});
       const prefs = await api.completeOnboarding();
       await onComplete(prefs);
     } catch (err) {

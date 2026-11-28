@@ -116,6 +116,9 @@ enum Command {
 
         #[arg(long)]
         volume: Option<i64>,
+
+        #[arg(long = "owner-pid")]
+        owner_pid: Option<u32>,
     },
 
     /// Direct soundpack switch shorthand (e.g. `thocci creamy`, `thocci Wooden Keyboard`)
@@ -160,7 +163,8 @@ fn main() -> ExitCode {
             pack,
             pack_id,
             volume,
-        } => cmd_daemon(pack, pack_id, volume),
+            owner_pid,
+        } => cmd_daemon(pack, pack_id, volume, owner_pid),
     };
 
     ExitCode::from(code)
@@ -210,6 +214,7 @@ fn cmd_on(pack: Option<PathBuf>, volume: Option<i64>, color: bool) -> u8 {
         StartOptions {
             pack_dir: pack,
             volume,
+            owner_pid: None,
         },
     ) {
         Ok(status) => {
@@ -383,11 +388,17 @@ fn cmd_packs(color: bool) -> u8 {
     0
 }
 
-fn cmd_daemon(pack: Option<PathBuf>, pack_id: Option<String>, volume: Option<i64>) -> u8 {
+fn cmd_daemon(
+    pack: Option<PathBuf>,
+    pack_id: Option<String>,
+    volume: Option<i64>,
+    owner_pid: Option<u32>,
+) -> u8 {
     let config = DaemonConfig {
         pack_dir: pack,
         pack_id,
         volume: volume.map(paths::clamp_percent),
+        owner_pid,
     };
     match daemon::run_daemon(config) {
         Ok(()) => 0,

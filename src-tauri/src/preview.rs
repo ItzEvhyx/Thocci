@@ -1,14 +1,17 @@
 //! Local GUI audio audition client.
 //!
 //! Plays single-shot key press and release previews for explicit dashboard
-//! pointer/touch auditions and Quick Actions activations using the active
-//! soundpack and current volume — even while the global background daemon is
-//! stopped — without spawning a second keyboard listener.
+//! pointer/touch auditions, pack selection, and Quick Actions activations ONLY
+//! while desktop playback is explicitly enabled and responsive — never on fresh
+//! launch, during onboarding, while Off/starting, or during teardown.
 //!
-//! Keeps its output stream warm across a typing/clicking burst (avoiding
-//! repeated Bluetooth A2DP transport suspend/resume delays) and closes it
-//! cleanly after an idle period using a single background reaper thread.
+//! Keeps its output stream warm across an enabled typing/clicking burst
+//! (avoiding repeated Bluetooth A2DP transport suspend/resume delays), closes it
+//! immediately on Disable/Quit via [`PreviewPlayer::quiesce`] /
+//! [`PreviewPlayer::shutdown`], and closes it after an idle period via a single
+//! background reaper thread.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -31,6 +34,11 @@ struct PreviewInner {
 
 pub struct PreviewPlayer {
     inner: Arc<Mutex<PreviewInner>>,
+    /// Explicitly opt-in: starts `false` so nothing can play before playback is enabled.
+    enabled: AtomicBool,
+    /// Monotonically incremented on every quiesce/shutdown so in-flight preview
+    /// requests that raced with Disable/Quit abort cleanly without playing.
+    generation: AtomicU64,
 }
 
 impl Default for PreviewPlayer {
@@ -43,13 +51,44 @@ impl PreviewPlayer {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(PreviewInner::default())),
+            enabled: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
+    }
+
+    /// Authorize or revoke GUI preview playback to match the confirmed engine
+    /// session state. Disabling immediately quiesces any active preview audio.
+    pub fn set_enabled(&self, allowed: bool) {
+        if allowed {
+            self.enabled.store(true, Ordering::Release);
+        } else {
+            self.quiesce();
+        }
+    }
+
+    /// Immediately disable preview playback, invalidate any in-flight preview
+    /// requests, and silence/close the preview audio stream while preserving
+    /// cached pack decoding for a future enabled session.
+    pub fn quiesce(&self) {
+        self.enabled.store(false, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(engine) = guard.audio.take() {
+            engine.shutdown();
+        }
+        guard.last_device_check = None;
+        guard.last_activity = None;
     }
 
     /// Play one audition sample (`kind` = `"down"` or `"up"`) at `volume` (0-100),
     /// applying the shared physical-key stereo zone when `stereo` is enabled.
     ///
-    /// Volume 0 returns `Ok(false)` immediately and stays completely silent.
+    /// Returns `Ok(false)` silently without opening audio when playback is not
+    /// enabled, when volume is 0, or if quiesced before playback begins.
     pub fn play(
         &self,
         code: Option<&str>,
@@ -58,11 +97,16 @@ impl PreviewPlayer {
         volume: u8,
         stereo: bool,
     ) -> Result<bool, String> {
-        if volume == 0 {
+        if !self.is_enabled() || volume == 0 {
+            return Ok(false);
+        }
+        let token = self.generation.load(Ordering::Acquire);
+
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if !self.is_enabled() || self.generation.load(Ordering::Acquire) != token {
             return Ok(false);
         }
 
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         let normalized_vol = f32::from(volume.min(100)) / 100.0;
 
@@ -78,6 +122,9 @@ impl PreviewPlayer {
                     Soundpack::load_by_id(pack_id, target_rate).map_err(|err| err.to_string())?;
                 guard.loaded_pack = Some(Arc::new(pack));
                 guard.loaded_pack_id = Some(pack_id.to_owned());
+            }
+            if !self.is_enabled() || self.generation.load(Ordering::Acquire) != token {
+                return Ok(false);
             }
             let engine = AudioEngine::new(normalized_vol);
             engine.init().map_err(|err| err.to_string())?;
@@ -115,6 +162,13 @@ impl PreviewPlayer {
                 let resampled = existing.resampled_to(sample_rate);
                 guard.loaded_pack = Some(Arc::new(resampled));
             }
+        }
+
+        if !self.is_enabled() || self.generation.load(Ordering::Acquire) != token {
+            if let Some(engine) = guard.audio.take() {
+                engine.shutdown();
+            }
+            return Ok(false);
         }
 
         let Some(pack) = guard.loaded_pack.as_ref() else {
@@ -190,6 +244,8 @@ impl PreviewPlayer {
     }
 
     pub fn shutdown(&self) {
+        self.enabled.store(false, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::AcqRel);
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(engine) = guard.audio.take() {
             engine.shutdown();
@@ -206,11 +262,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn disabled_by_default_and_silent_even_with_nonzero_volume() {
+        let player = PreviewPlayer::new();
+        assert!(!player.is_enabled());
+        let played = player
+            .play(Some("Space"), "down", "cherry-mx", 100, false)
+            .expect("disabled preview returns Ok(false)");
+        assert!(!played);
+        assert!(player.inner.lock().unwrap().audio.is_none());
+    }
+
+    #[test]
     fn volume_zero_is_strictly_silent_without_opening_audio() {
         let player = PreviewPlayer::new();
+        player.set_enabled(true);
         let played = player
             .play(Some("KeyA"), "down", "cherry-mx", 0, true)
             .expect("volume 0 succeeds silently");
+        assert!(!played);
+        assert!(player.inner.lock().unwrap().audio.is_none());
+    }
+
+    #[test]
+    fn quiesce_disables_preview_and_is_safe_to_call_repeatedly() {
+        let player = PreviewPlayer::new();
+        player.set_enabled(true);
+        assert!(player.is_enabled());
+        player.quiesce();
+        player.quiesce();
+        assert!(!player.is_enabled());
+        let played = player
+            .play(Some("KeyA"), "down", "cherry-mx", 80, false)
+            .expect("quiesced preview returns Ok(false)");
         assert!(!played);
         assert!(player.inner.lock().unwrap().audio.is_none());
     }

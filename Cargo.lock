@@ -4895,9 +4895,10 @@ dependencies = [
 
 [[package]]
 name = "thocci-app"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "cairo-rs",
+ "futures-util",
  "gdk",
  "gdkwayland-sys",
  "glib",
@@ -4915,11 +4916,13 @@ dependencies = [
  "wayland-backend",
  "wayland-client",
  "wayland-protocols-wlr",
+ "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]
 name = "thocci-cli"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "clap",
  "enable-ansi-support",
@@ -4928,7 +4931,7 @@ dependencies = [
 
 [[package]]
 name = "thocci-core"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "core-foundation 0.10.1",
  "core-graphics",

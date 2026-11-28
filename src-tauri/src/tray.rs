@@ -1,4 +1,28 @@
-//! Cross-platform menu-bar / system-tray host and Quick Actions popover routing.
+//! Cross-platform menu-bar / system-tray host, OS-matched tray contrast, and
+//! Quick Actions popover sizing/routing.
+//!
+//! Tray appearance strategy:
+//! - **macOS**: uses the native template asset (`thocci-tray-template-32.png`) with
+//!   `icon_as_template(true)` so AppKit adapts the mark to the menu bar surface.
+//! - **Windows**: reads `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`
+//!   preferring `SystemUsesLightTheme` (the taskbar surface) over `AppsUseLightTheme`,
+//!   uses the black mark (`thocci-tray-dark-32.png`) on a light taskbar and the white
+//!   mark (`thocci-tray-light-32.png`) on a dark taskbar, and watches that registry key
+//!   for live updates via `RegNotifyChangeKeyValue`. Fallback when unreadable: dark
+//!   surface (white mark).
+//! - **Linux**: probes host appearance in priority order:
+//!   1. XDG Desktop Portal `org.freedesktop.portal.Settings` (`org.freedesktop.appearance` / `color-scheme`)
+//!   2. GNOME / GTK `gsettings` (`org.gnome.desktop.interface` `color-scheme`, then `gtk-theme`)
+//!   3. KDE Plasma `kdeglobals` (`[General]` `ColorScheme`)
+//!   4. `GTK_THEME` environment variable and `~/.config/gtk-3.0/settings.ini`
+//!   5. Documented fallback when no host appearance data is reported: dark panel surface
+//!      (white mark `thocci-tray-light-{22,32}.png`), matching standard Linux panels.
+//!
+//!   Updates the existing `ksni` StatusNotifierItem pixmaps (preserving both 22 px and
+//!   32 px ARGB32 variants) live on `org.freedesktop.portal.Settings::SettingChanged`.
+//!
+//! The dashboard's explicit Light/Dark toggle is persisted in `ui-prefs.json` and kept
+//! strictly independent from the host tray mark.
 
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,8 +37,8 @@ use tauri::{
     WebviewWindowBuilder, Wry,
 };
 
-use crate::platform::{compute_popover_position, fallback_popover_position, PixelRect};
-use crate::AppState;
+use crate::platform::{compute_popover_geometry, PixelRect};
+use crate::{AppState, QuickActionsPlacement};
 
 #[cfg(not(target_os = "linux"))]
 const TRAY_ID: &str = "thocci-tray";
@@ -29,20 +53,392 @@ const MENU_SOUNDPACKS: &str = "tray-soundpacks";
 #[cfg(not(target_os = "linux"))]
 const MENU_QUIT: &str = "tray-quit";
 
-const QUICK_ACTIONS_LOGICAL_W: f64 = 288.0;
-const QUICK_ACTIONS_LOGICAL_H: f64 = 282.0;
+pub const QUICK_ACTIONS_LOGICAL_W: f64 = 288.0;
+pub const QUICK_ACTIONS_COLLAPSED_H: f64 = 320.0;
+pub const QUICK_ACTIONS_MAX_H: f64 = 600.0;
 
 #[cfg(target_os = "macos")]
-const TRAY_ICON_PNG: &[u8] =
+const TRAY_ICON_TEMPLATE_32_PNG: &[u8] =
     include_bytes!("../../assets/desktop/brand/tray/thocci-tray-template-32.png");
 
+/// White mark PNG exports — used on a dark tray/taskbar surface.
 #[cfg(target_os = "linux")]
-const TRAY_ICON_22_PNG: &[u8] =
+const TRAY_MARK_WHITE_22_PNG: &[u8] =
     include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-22.png");
+#[cfg(not(target_os = "macos"))]
+const TRAY_MARK_WHITE_32_PNG: &[u8] =
+    include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-32.png");
+
+/// Black mark PNG exports — used on a light tray/taskbar surface.
+#[cfg(target_os = "linux")]
+const TRAY_MARK_BLACK_22_PNG: &[u8] =
+    include_bytes!("../../assets/desktop/brand/tray/thocci-tray-dark-22.png");
+#[cfg(not(target_os = "macos"))]
+const TRAY_MARK_BLACK_32_PNG: &[u8] =
+    include_bytes!("../../assets/desktop/brand/tray/thocci-tray-dark-32.png");
+
+/// Resolved host panel/taskbar surface brightness used to choose contrasting
+/// monochrome tray artwork.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraySurfaceAppearance {
+    /// Light tray/taskbar surface -> render the black Thocci mark (`thocci-tray-dark-*`).
+    Light,
+    /// Dark tray/taskbar surface -> render the white Thocci mark (`thocci-tray-light-*`).
+    Dark,
+}
 
 #[cfg(not(target_os = "macos"))]
-const TRAY_ICON_PNG: &[u8] =
-    include_bytes!("../../assets/desktop/brand/tray/thocci-tray-light-32.png");
+pub fn tray_mark_png_32(surface: TraySurfaceAppearance) -> &'static [u8] {
+    match surface {
+        TraySurfaceAppearance::Light => TRAY_MARK_BLACK_32_PNG,
+        TraySurfaceAppearance::Dark => TRAY_MARK_WHITE_32_PNG,
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn tray_mark_png_22(surface: TraySurfaceAppearance) -> &'static [u8] {
+    match surface {
+        TraySurfaceAppearance::Light => TRAY_MARK_BLACK_22_PNG,
+        TraySurfaceAppearance::Dark => TRAY_MARK_WHITE_22_PNG,
+    }
+}
+
+/// Parse XDG Desktop Portal `org.freedesktop.appearance` `color-scheme`:
+/// `1` = prefer dark, `2` = prefer light, `0` = no preference.
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_portal_color_scheme(code: u32) -> Option<TraySurfaceAppearance> {
+    match code {
+        1 => Some(TraySurfaceAppearance::Dark),
+        2 => Some(TraySurfaceAppearance::Light),
+        _ => None,
+    }
+}
+
+/// Parse GNOME `gsettings get org.gnome.desktop.interface color-scheme`.
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_gsettings_color_scheme(raw: &str) -> Option<TraySurfaceAppearance> {
+    let cleaned = raw.trim().trim_matches('\'').trim_matches('"');
+    match cleaned {
+        "prefer-dark" => Some(TraySurfaceAppearance::Dark),
+        "prefer-light" => Some(TraySurfaceAppearance::Light),
+        _ => None,
+    }
+}
+
+/// Infer surface appearance from a desktop theme name (e.g. `Adwaita-dark`, `BreezeLight`).
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_theme_name_appearance(raw: &str) -> Option<TraySurfaceAppearance> {
+    let cleaned = raw.trim().trim_matches('\'').trim_matches('"');
+    if cleaned.is_empty() {
+        return None;
+    }
+    let lower = cleaned.to_ascii_lowercase();
+    if lower.contains("dark") || lower.contains("noir") || lower.contains("night") {
+        Some(TraySurfaceAppearance::Dark)
+    } else {
+        Some(TraySurfaceAppearance::Light)
+    }
+}
+
+/// Parse KDE Plasma `kdeglobals` `[General]` `ColorScheme=...`.
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_kdeglobals_appearance(contents: &str) -> Option<TraySurfaceAppearance> {
+    let mut in_general = false;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_general = trimmed.eq_ignore_ascii_case("[General]");
+            continue;
+        }
+        if in_general {
+            if let Some(val) = trimmed.strip_prefix("ColorScheme=") {
+                return parse_theme_name_appearance(val);
+            }
+        }
+    }
+    None
+}
+
+/// Parse GTK 3/4 `settings.ini` appearance preference.
+#[cfg(any(target_os = "linux", test))]
+pub fn parse_gtk_settings_ini_appearance(contents: &str) -> Option<TraySurfaceAppearance> {
+    let mut theme_name: Option<String> = None;
+    for line in contents.lines() {
+        let trimmed = line.trim();
+        if let Some((key, val)) = trimmed.split_once('=') {
+            let k = key.trim();
+            let v = val.trim();
+            if k.eq_ignore_ascii_case("gtk-application-prefer-dark-theme") {
+                match v.to_ascii_lowercase().as_str() {
+                    "1" | "true" | "yes" => return Some(TraySurfaceAppearance::Dark),
+                    "0" | "false" | "no" => return Some(TraySurfaceAppearance::Light),
+                    _ => {}
+                }
+            } else if k.eq_ignore_ascii_case("gtk-theme-name") {
+                theme_name = Some(v.to_owned());
+            }
+        }
+    }
+    theme_name.as_deref().and_then(parse_theme_name_appearance)
+}
+
+/// Resolve Windows taskbar appearance, preferring `SystemUsesLightTheme` (taskbar
+/// surface) over `AppsUseLightTheme`, defaulting to Dark if neither is present.
+#[cfg(any(windows, test))]
+pub fn parse_windows_personalize_values(
+    system_uses_light: Option<u32>,
+    apps_use_light: Option<u32>,
+) -> TraySurfaceAppearance {
+    match system_uses_light.or(apps_use_light) {
+        Some(1) => TraySurfaceAppearance::Light,
+        Some(0) => TraySurfaceAppearance::Dark,
+        _ => TraySurfaceAppearance::Dark,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn extract_u32_from_zvariant(value: &zbus::zvariant::Value<'_>) -> Option<u32> {
+    match value {
+        zbus::zvariant::Value::U32(n) => Some(*n),
+        zbus::zvariant::Value::Value(inner) => extract_u32_from_zvariant(inner),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn query_portal_color_scheme(conn: &zbus::Connection) -> Option<TraySurfaceAppearance> {
+    let proxy = zbus::Proxy::new(
+        conn,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+    )
+    .await
+    .ok()?;
+
+    if let Ok(val) = proxy
+        .call::<_, _, zbus::zvariant::OwnedValue>(
+            "ReadOne",
+            &("org.freedesktop.appearance", "color-scheme"),
+        )
+        .await
+    {
+        if let Some(code) = extract_u32_from_zvariant(&val) {
+            if let Some(app) = parse_portal_color_scheme(code) {
+                return Some(app);
+            }
+        }
+    }
+
+    if let Ok(val) = proxy
+        .call::<_, _, zbus::zvariant::OwnedValue>(
+            "Read",
+            &("org.freedesktop.appearance", "color-scheme"),
+        )
+        .await
+    {
+        if let Some(code) = extract_u32_from_zvariant(&val) {
+            if let Some(app) = parse_portal_color_scheme(code) {
+                return Some(app);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_fallback_appearance() -> TraySurfaceAppearance {
+    use std::process::Command;
+
+    if let Ok(out) = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .output()
+    {
+        if out.status.success() {
+            if let Some(found) = parse_gsettings_color_scheme(&String::from_utf8_lossy(&out.stdout))
+            {
+                return found;
+            }
+        }
+    }
+
+    if let Ok(out) = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+        .output()
+    {
+        if out.status.success() {
+            if let Some(found) = parse_theme_name_appearance(&String::from_utf8_lossy(&out.stdout))
+            {
+                return found;
+            }
+        }
+    }
+
+    let config_root = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")));
+
+    if let Some(cfg_dir) = &config_root {
+        if let Ok(kde) = std::fs::read_to_string(cfg_dir.join("kdeglobals")) {
+            if let Some(found) = parse_kdeglobals_appearance(&kde) {
+                return found;
+            }
+        }
+    }
+
+    if let Ok(gtk_theme) = std::env::var("GTK_THEME") {
+        if let Some(found) = parse_theme_name_appearance(&gtk_theme) {
+            return found;
+        }
+    }
+
+    if let Some(cfg_dir) = &config_root {
+        for sub in ["gtk-4.0/settings.ini", "gtk-3.0/settings.ini"] {
+            if let Ok(ini) = std::fs::read_to_string(cfg_dir.join(sub)) {
+                if let Some(found) = parse_gtk_settings_ini_appearance(&ini) {
+                    return found;
+                }
+            }
+        }
+    }
+
+    // Documented fallback when no host appearance signal is available: assume dark panel
+    // surface (standard on Waybar, Hyprpanel, Quickshell, GNOME Shell, Polybar) and use
+    // the white Thocci mark.
+    TraySurfaceAppearance::Dark
+}
+
+#[cfg(target_os = "linux")]
+async fn detect_linux_tray_appearance(conn: Option<&zbus::Connection>) -> TraySurfaceAppearance {
+    if let Some(c) = conn {
+        if let Some(app) = query_portal_color_scheme(c).await {
+            return app;
+        }
+    } else if let Ok(c) = zbus::Connection::session().await {
+        if let Some(app) = query_portal_color_scheme(&c).await {
+            return app;
+        }
+    }
+    detect_linux_fallback_appearance()
+}
+
+#[cfg(windows)]
+fn read_windows_registry_dword(subkey: &[u16], value_name: &[u16]) -> Option<u32> {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD,
+    };
+
+    unsafe {
+        let mut hkey: HKEY = std::ptr::null_mut();
+        if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_READ, &mut hkey)
+            != ERROR_SUCCESS
+        {
+            return None;
+        }
+        let mut data_type: u32 = 0;
+        let mut value: u32 = 0;
+        let mut size: u32 = std::mem::size_of::<u32>() as u32;
+        let status = RegQueryValueExW(
+            hkey,
+            value_name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut data_type,
+            (&mut value as *mut u32).cast::<u8>(),
+            &mut size,
+        );
+        RegCloseKey(hkey);
+        if status == ERROR_SUCCESS && data_type == REG_DWORD {
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn wide_null(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn detect_windows_tray_appearance() -> TraySurfaceAppearance {
+    let subkey = wide_null(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+    let sys_val = wide_null("SystemUsesLightTheme");
+    let app_val = wide_null("AppsUseLightTheme");
+    let system_uses_light = read_windows_registry_dword(&subkey, &sys_val);
+    let apps_use_light = read_windows_registry_dword(&subkey, &app_val);
+    parse_windows_personalize_values(system_uses_light, apps_use_light)
+}
+
+#[cfg(windows)]
+pub fn refresh_windows_tray_appearance(app: &AppHandle<Wry>) {
+    let surface = detect_windows_tray_appearance();
+    let Ok(icon) = Image::from_bytes(tray_mark_png_32(surface)) else {
+        return;
+    };
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_icon(Some(icon));
+    }
+}
+
+#[cfg(windows)]
+fn spawn_windows_appearance_watcher(app: AppHandle<Wry>) {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegNotifyChangeKeyValue, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_NOTIFY,
+        KEY_READ, REG_NOTIFY_CHANGE_LAST_SET,
+    };
+
+    let _ = std::thread::Builder::new()
+        .name("thocci-tray-theme".to_owned())
+        .spawn(move || {
+            let subkey = wide_null(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            let mut hkey: HKEY = std::ptr::null_mut();
+            let opened = unsafe {
+                RegOpenKeyExW(
+                    HKEY_CURRENT_USER,
+                    subkey.as_ptr(),
+                    0,
+                    KEY_READ | KEY_NOTIFY,
+                    &mut hkey,
+                )
+            };
+            if opened != ERROR_SUCCESS {
+                return;
+            }
+            let mut last = detect_windows_tray_appearance();
+            loop {
+                if app.state::<AppState>().is_quitting.load(Ordering::Acquire) {
+                    break;
+                }
+                let rc = unsafe {
+                    RegNotifyChangeKeyValue(
+                        hkey,
+                        0,
+                        REG_NOTIFY_CHANGE_LAST_SET,
+                        std::ptr::null_mut(),
+                        0,
+                    )
+                };
+                if rc != ERROR_SUCCESS
+                    || app.state::<AppState>().is_quitting.load(Ordering::Acquire)
+                {
+                    break;
+                }
+                let next = detect_windows_tray_appearance();
+                if next != last {
+                    last = next;
+                    refresh_windows_tray_appearance(&app);
+                }
+            }
+            unsafe {
+                RegCloseKey(hkey);
+            }
+        });
+}
 
 #[cfg(target_os = "linux")]
 fn decode_png_to_ksni_icon(bytes: &[u8]) -> Option<ksni::Icon> {
@@ -62,12 +458,12 @@ fn decode_png_to_ksni_icon(bytes: &[u8]) -> Option<ksni::Icon> {
 }
 
 #[cfg(target_os = "linux")]
-fn build_linux_tray_icons() -> Vec<ksni::Icon> {
+pub fn build_linux_tray_icons(surface: TraySurfaceAppearance) -> Vec<ksni::Icon> {
     let mut icons = Vec::with_capacity(2);
-    if let Some(icon_22) = decode_png_to_ksni_icon(TRAY_ICON_22_PNG) {
+    if let Some(icon_22) = decode_png_to_ksni_icon(tray_mark_png_22(surface)) {
         icons.push(icon_22);
     }
-    if let Some(icon_32) = decode_png_to_ksni_icon(TRAY_ICON_PNG) {
+    if let Some(icon_32) = decode_png_to_ksni_icon(tray_mark_png_32(surface)) {
         icons.push(icon_32);
     }
     icons
@@ -194,13 +590,82 @@ impl ksni::Tray for LinuxTray {
 }
 
 #[cfg(target_os = "linux")]
+fn spawn_linux_appearance_watcher(app: AppHandle<Wry>, initial: TraySurfaceAppearance) {
+    use futures_util::StreamExt;
+
+    tauri::async_runtime::spawn(async move {
+        let Ok(conn) = zbus::Connection::session().await else {
+            return;
+        };
+        let Ok(proxy) = zbus::Proxy::new(
+            &conn,
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+        )
+        .await
+        else {
+            return;
+        };
+        let Ok(mut stream) = proxy.receive_signal("SettingChanged").await else {
+            return;
+        };
+
+        let mut last = initial;
+        while let Some(msg) = stream.next().await {
+            if app.state::<AppState>().is_quitting.load(Ordering::Acquire) {
+                break;
+            }
+            let Ok((ns, key, value)) = msg
+                .body()
+                .deserialize::<(String, String, zbus::zvariant::OwnedValue)>()
+            else {
+                continue;
+            };
+            let relevant = (ns == "org.freedesktop.appearance" && key == "color-scheme")
+                || (ns == "org.gnome.desktop.interface"
+                    && (key == "color-scheme" || key == "gtk-theme"));
+            if !relevant {
+                continue;
+            }
+
+            let next = if ns == "org.freedesktop.appearance" && key == "color-scheme" {
+                extract_u32_from_zvariant(&value)
+                    .and_then(parse_portal_color_scheme)
+                    .unwrap_or_else(detect_linux_fallback_appearance)
+            } else {
+                detect_linux_tray_appearance(Some(&conn)).await
+            };
+
+            if next == last {
+                continue;
+            }
+            last = next;
+
+            let handle = app
+                .state::<AppState>()
+                .linux_tray_handle
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone();
+            let Some(handle) = handle else {
+                break;
+            };
+            let next_icons = build_linux_tray_icons(next);
+            let _ = handle.update(|tray| tray.icons = next_icons).await;
+        }
+    });
+}
+
+#[cfg(target_os = "linux")]
 pub async fn setup_tray_async(app: &AppHandle<Wry>, initial_running: bool) -> bool {
     use ksni::TrayMethods;
 
+    let initial_surface = detect_linux_tray_appearance(None).await;
     let tray = LinuxTray {
         app: app.clone(),
         running: initial_running,
-        icons: build_linux_tray_icons(),
+        icons: build_linux_tray_icons(initial_surface),
     };
 
     match tray.spawn().await {
@@ -210,6 +675,7 @@ pub async fn setup_tray_async(app: &AppHandle<Wry>, initial_running: bool) -> bo
                 .linux_tray_handle
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()) = Some(handle);
+            spawn_linux_appearance_watcher(app.clone(), initial_surface);
             true
         }
         Err(err) => {
@@ -289,7 +755,14 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
         return false;
     };
 
-    let Ok(icon) = Image::from_bytes(TRAY_ICON_PNG) else {
+    #[cfg(target_os = "macos")]
+    let icon_bytes = TRAY_ICON_TEMPLATE_32_PNG;
+    #[cfg(windows)]
+    let icon_bytes = tray_mark_png_32(detect_windows_tray_appearance());
+    #[cfg(all(not(target_os = "macos"), not(windows)))]
+    let icon_bytes = tray_mark_png_32(TraySurfaceAppearance::Dark);
+
+    let Ok(icon) = Image::from_bytes(icon_bytes) else {
         return false;
     };
 
@@ -325,7 +798,11 @@ pub fn setup_tray(app: &AppHandle<Wry>, initial_running: bool) -> bool {
     let builder = builder.icon_as_template(true);
 
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| builder.build(app))) {
-        Ok(Ok(_)) => true,
+        Ok(Ok(_)) => {
+            #[cfg(windows)]
+            spawn_windows_appearance_watcher(app.clone());
+            true
+        }
         Ok(Err(err)) => {
             log::warn!(
                 "System tray unavailable on this host ({err}); continuing with dashboard fallback"
@@ -438,6 +915,14 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Clamp and validate a requested Quick Actions popover logical height.
+pub fn validate_quick_actions_height(requested: f64) -> Result<f64, String> {
+    if !requested.is_finite() {
+        return Err("Quick Actions height must be a finite number.".to_owned());
+    }
+    Ok(requested.clamp(QUICK_ACTIONS_COLLAPSED_H, QUICK_ACTIONS_MAX_H))
+}
+
 /// Lazily construct the Quick Actions WebView window on first demand so startup
 /// and everyday dashboard use never spawn an idle second WebKit/WebView process.
 /// Returns `(window, created_now)`.
@@ -452,7 +937,7 @@ fn ensure_quick_actions_window(app: &AppHandle<Wry>) -> Option<(tauri::WebviewWi
         WebviewUrl::App("index.html?view=quick-actions".into()),
     )
     .title("Thocci Quick Actions")
-    .inner_size(QUICK_ACTIONS_LOGICAL_W, QUICK_ACTIONS_LOGICAL_H)
+    .inner_size(QUICK_ACTIONS_LOGICAL_W, QUICK_ACTIONS_COLLAPSED_H)
     .resizable(cfg!(target_os = "linux"))
     .decorations(false)
     .transparent(true)
@@ -502,9 +987,19 @@ pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
     #[cfg(not(target_os = "linux"))]
     let _ = created_now;
 
-    app.state::<AppState>()
+    let state = app.state::<AppState>();
+    state
         .last_quick_actions_show_ms
         .store(now_ms(), Ordering::Release);
+    *state
+        .last_quick_actions_anchor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = anchor;
+    let current_height = *state
+        .quick_actions_height
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let desired_h = current_height.clamp(QUICK_ACTIONS_COLLAPSED_H, QUICK_ACTIONS_MAX_H);
 
     #[cfg(target_os = "linux")]
     if crate::layer_shell::is_active() {
@@ -530,7 +1025,7 @@ pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
             let placement = crate::layer_shell::prepare_bar_popup(
                 "quick-actions",
                 QUICK_ACTIONS_LOGICAL_W as i32,
-                QUICK_ACTIONS_LOGICAL_H as i32,
+                desired_h.round() as i32,
             );
             *app_clone
                 .state::<AppState>()
@@ -549,18 +1044,109 @@ pub fn show_quick_actions_window(app: &AppHandle<Wry>, anchor: Option<Rect>) {
         return;
     }
 
-    position_quick_actions(&win, anchor);
+    let applied_h = match position_quick_actions(&win, anchor, desired_h, true) {
+        Some((placement, clamped_logical_h)) => {
+            *state
+                .last_quick_actions_placement
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(placement.clone());
+            let _ = app.emit_to(
+                "quick-actions",
+                "thocci://quick-actions-placement",
+                &placement,
+            );
+            clamped_logical_h
+        }
+        None => desired_h,
+    };
+
     let _ = win.show();
     let _ = win.unminimize();
     let _ = win.set_focus();
     crate::platform::ensure_floating_overlay(
         "Thocci Quick Actions",
         QUICK_ACTIONS_LOGICAL_W as u32,
-        QUICK_ACTIONS_LOGICAL_H as u32,
+        applied_h.round() as u32,
         false,
         true,
     );
     let _ = app.emit_to("quick-actions", "thocci://quick-actions-shown", ());
+}
+
+/// Resize and reposition the Quick Actions popover cleanly on its actual tray
+/// monitor, validating and clamping height to the monitor's usable work area.
+pub fn resize_quick_actions_window(app: &AppHandle<Wry>, requested_h: f64) -> Result<f64, String> {
+    let clamped = validate_quick_actions_height(requested_h)?;
+    let state = app.state::<AppState>();
+    *state
+        .quick_actions_height
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = clamped;
+
+    #[cfg(target_os = "linux")]
+    if crate::layer_shell::is_active() {
+        let app_clone = app.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.run_on_main_thread(move || {
+            let res = crate::layer_shell::resize_bar_popup(
+                "quick-actions",
+                QUICK_ACTIONS_LOGICAL_W as i32,
+                clamped.round() as i32,
+            );
+            if let Some((placement, actual_h)) = res {
+                *app_clone
+                    .state::<AppState>()
+                    .last_quick_actions_placement
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(placement.clone());
+                let _ = app_clone.emit_to(
+                    "quick-actions",
+                    "thocci://quick-actions-placement",
+                    &placement,
+                );
+                let _ = tx.send(f64::from(actual_h));
+            } else {
+                let _ = tx.send(clamped);
+            }
+        })
+        .map_err(|err| err.to_string())?;
+        return Ok(rx
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .unwrap_or(clamped));
+    }
+
+    let Some(win) = app.get_webview_window("quick-actions") else {
+        return Ok(clamped);
+    };
+    let anchor = *state
+        .last_quick_actions_anchor
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let applied_h = match position_quick_actions(&win, anchor, clamped, false) {
+        Some((placement, actual_h)) => {
+            *state
+                .last_quick_actions_placement
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = Some(placement.clone());
+            let _ = app.emit_to(
+                "quick-actions",
+                "thocci://quick-actions-placement",
+                &placement,
+            );
+            actual_h
+        }
+        None => clamped,
+    };
+
+    crate::platform::ensure_floating_overlay(
+        "Thocci Quick Actions",
+        QUICK_ACTIONS_LOGICAL_W as u32,
+        applied_h.round() as u32,
+        false,
+        false,
+    );
+    Ok(applied_h)
 }
 
 pub fn hide_quick_actions_window(app: &AppHandle<Wry>) {
@@ -584,7 +1170,12 @@ pub fn hide_quick_actions_window(app: &AppHandle<Wry>) {
     }
 }
 
-fn position_quick_actions(win: &tauri::WebviewWindow<Wry>, anchor: Option<Rect>) {
+fn position_quick_actions(
+    win: &tauri::WebviewWindow<Wry>,
+    anchor: Option<Rect>,
+    desired_logical_h: f64,
+    animate: bool,
+) -> Option<(QuickActionsPlacement, f64)> {
     let monitors = win.available_monitors().unwrap_or_default();
     let default_monitor = win
         .current_monitor()
@@ -622,13 +1213,11 @@ fn position_quick_actions(win: &tauri::WebviewWindow<Wry>, anchor: Option<Rect>)
         (default_monitor, None)
     };
 
-    let Some(monitor) = chosen_monitor else {
-        return;
-    };
+    let monitor = chosen_monitor?;
 
-    let scale = monitor.scale_factor();
-    let pop_w = (QUICK_ACTIONS_LOGICAL_W * scale).round() as i32;
-    let pop_h = (QUICK_ACTIONS_LOGICAL_H * scale).round() as i32;
+    let scale = monitor.scale_factor().max(0.5);
+    let desired_w = (QUICK_ACTIONS_LOGICAL_W * scale).round() as i32;
+    let desired_h = (desired_logical_h * scale).round() as i32;
     let gap = (8.0 * scale).round() as i32;
     let margin = (12.0 * scale).round() as i32;
 
@@ -640,15 +1229,28 @@ fn position_quick_actions(win: &tauri::WebviewWindow<Wry>, anchor: Option<Rect>)
         height: wa.size.height as i32,
     };
 
-    let (x, y) = match anchor_phys {
-        Some(a) if a.width > 0 || a.height > 0 => {
-            compute_popover_position(a, work_rect, (pop_w, pop_h), gap, margin)
-        }
-        _ => fallback_popover_position(work_rect, (pop_w, pop_h), margin),
-    };
+    let (x, y, pop_w, pop_h, max_phys_h) =
+        compute_popover_geometry(anchor_phys, work_rect, (desired_w, desired_h), gap, margin);
 
     let _ = win.set_size(PhysicalSize::new(pop_w.max(1) as u32, pop_h.max(1) as u32));
     let _ = win.set_position(PhysicalPosition::new(x, y));
+
+    let logical_max_h = ((f64::from(max_phys_h) / scale).floor() as i32)
+        .clamp(QUICK_ACTIONS_COLLAPSED_H as i32, QUICK_ACTIONS_MAX_H as i32);
+    let actual_logical_h = (f64::from(pop_h) / scale)
+        .round()
+        .clamp(QUICK_ACTIONS_COLLAPSED_H, f64::from(logical_max_h));
+
+    let placement = QuickActionsPlacement {
+        layer_shell: false,
+        x: (f64::from(x) / scale).round() as i32,
+        y: (f64::from(y) / scale).round() as i32,
+        screen_width: (f64::from(work_rect.width) / scale).round() as i32,
+        screen_height: (f64::from(work_rect.height) / scale).round() as i32,
+        max_height: logical_max_h,
+        animate,
+    };
+    Some((placement, actual_logical_h))
 }
 
 fn rect_to_physical(rect: &Rect, monitor: Option<&tauri::Monitor>) -> (i32, i32, i32, i32) {
@@ -658,17 +1260,119 @@ fn rect_to_physical(rect: &Rect, monitor: Option<&tauri::Monitor>) -> (i32, i32,
     (pos.x, pos.y, size.width, size.height)
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn linux_tray_icons_decode_to_valid_argb32_pixmaps() {
-        let icons = build_linux_tray_icons();
-        assert_eq!(icons.len(), 2);
-        assert_eq!((icons[0].width, icons[0].height), (22, 22));
-        assert_eq!(icons[0].data.len(), 22 * 22 * 4);
-        assert_eq!((icons[1].width, icons[1].height), (32, 32));
-        assert_eq!(icons[1].data.len(), 32 * 32 * 4);
+    fn validates_and_clamps_quick_actions_height() {
+        assert!(validate_quick_actions_height(f64::NAN).is_err());
+        assert!(validate_quick_actions_height(f64::INFINITY).is_err());
+        assert_eq!(validate_quick_actions_height(100.0).unwrap(), 320.0);
+        assert_eq!(validate_quick_actions_height(444.0).unwrap(), 444.0);
+        assert_eq!(validate_quick_actions_height(9999.0).unwrap(), 600.0);
+    }
+
+    #[test]
+    fn windows_personalize_prefers_taskbar_surface_over_app_theme() {
+        // Light taskbar + dark apps -> black mark (Light surface)
+        assert_eq!(
+            parse_windows_personalize_values(Some(1), Some(0)),
+            TraySurfaceAppearance::Light
+        );
+        // Dark taskbar + light apps -> white mark (Dark surface)
+        assert_eq!(
+            parse_windows_personalize_values(Some(0), Some(1)),
+            TraySurfaceAppearance::Dark
+        );
+        // Fallback to AppsUseLightTheme if SystemUsesLightTheme missing
+        assert_eq!(
+            parse_windows_personalize_values(None, Some(1)),
+            TraySurfaceAppearance::Light
+        );
+        // Fallback when unreadable -> Dark surface
+        assert_eq!(
+            parse_windows_personalize_values(None, None),
+            TraySurfaceAppearance::Dark
+        );
+    }
+
+    #[test]
+    fn linux_appearance_parsers_handle_portal_gsettings_kde_and_gtk() {
+        assert_eq!(
+            parse_portal_color_scheme(1),
+            Some(TraySurfaceAppearance::Dark)
+        );
+        assert_eq!(
+            parse_portal_color_scheme(2),
+            Some(TraySurfaceAppearance::Light)
+        );
+        assert_eq!(parse_portal_color_scheme(0), None);
+
+        assert_eq!(
+            parse_gsettings_color_scheme("'prefer-dark'\n"),
+            Some(TraySurfaceAppearance::Dark)
+        );
+        assert_eq!(
+            parse_gsettings_color_scheme("'prefer-light'\n"),
+            Some(TraySurfaceAppearance::Light)
+        );
+        assert_eq!(parse_gsettings_color_scheme("'default'\n"), None);
+
+        assert_eq!(
+            parse_kdeglobals_appearance("[General]\nColorScheme=BreezeLight\n"),
+            Some(TraySurfaceAppearance::Light)
+        );
+        assert_eq!(
+            parse_kdeglobals_appearance("[General]\nColorScheme=BreezeDark\n"),
+            Some(TraySurfaceAppearance::Dark)
+        );
+
+        assert_eq!(
+            parse_gtk_settings_ini_appearance("[Settings]\ngtk-application-prefer-dark-theme=0\n"),
+            Some(TraySurfaceAppearance::Light)
+        );
+        assert_eq!(
+            parse_gtk_settings_ini_appearance("[Settings]\ngtk-theme-name=Adwaita-dark\n"),
+            Some(TraySurfaceAppearance::Dark)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tray_icons_decode_both_appearances_and_sizes_with_contrasting_marks() {
+        let light_surface = build_linux_tray_icons(TraySurfaceAppearance::Light);
+        let dark_surface = build_linux_tray_icons(TraySurfaceAppearance::Dark);
+        assert_eq!(light_surface.len(), 2);
+        assert_eq!(dark_surface.len(), 2);
+        assert_eq!((light_surface[0].width, light_surface[0].height), (22, 22));
+        assert_eq!(light_surface[0].data.len(), 22 * 22 * 4);
+        assert_eq!((light_surface[1].width, light_surface[1].height), (32, 32));
+        assert_eq!(light_surface[1].data.len(), 32 * 32 * 4);
+
+        // Verify average RGB of opaque pixels: light surface uses black mark (< 60),
+        // dark surface uses white mark (> 200).
+        let avg_luma = |icon: &ksni::Icon| -> f64 {
+            let mut sum = 0u64;
+            let mut count = 0u64;
+            for px in icon.data.as_chunks::<4>().0 {
+                // ARGB32 big-endian
+                if px[0] > 200 {
+                    sum += u64::from(px[1]) + u64::from(px[2]) + u64::from(px[3]);
+                    count += 3;
+                }
+            }
+            assert!(count > 0, "expected opaque tray pixels");
+            sum as f64 / count as f64
+        };
+
+        assert!(
+            avg_luma(&light_surface[1]) < 60.0,
+            "light tray surface must use black mark"
+        );
+        assert!(
+            avg_luma(&dark_surface[1]) > 200.0,
+            "dark tray surface must use white mark"
+        );
     }
 }

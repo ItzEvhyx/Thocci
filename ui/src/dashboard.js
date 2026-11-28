@@ -12,6 +12,13 @@
 import { api, currentTauriWindow, isTauriRuntime, listenEvent } from "./bridge.js";
 import { iconMarkup } from "./icons.js";
 import { mountInteractiveKeyboard } from "./keyboard.js";
+import {
+  MAX_PINNED_PACKS,
+  PIN_LIMIT_MESSAGE,
+  renderPackCard,
+  replaceCards,
+  resolvePinnedPacks,
+} from "./pack-cards.js";
 import { mountSidebarTrinket } from "./sidebar-trinket.js";
 import { mountMascotStage } from "./stage.js";
 import { mountTypingGame } from "./typing-game.js";
@@ -71,7 +78,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   document.body.className = "mode-dashboard";
 
   const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  let prefs = { ...initialPrefs };
+  let prefs = {
+    ...initialPrefs,
+    pinned_packs: Array.isArray(initialPrefs?.pinned_packs) ? [...initialPrefs.pinned_packs] : [],
+  };
   let catalog = [];
   let status = {
     running: false,
@@ -378,6 +388,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       </main>
       <div id="setupGuideModal" class="modal-backdrop" hidden></div>
       <div id="fileDialogScrim" class="file-dialog-scrim" aria-hidden="true" hidden></div>
+      <div id="pinFeedback" class="pin-feedback" role="status" aria-live="polite" hidden></div>
     </div>
   `;
 
@@ -417,6 +428,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   const workspaceInner = root.querySelector(".workspace-inner");
   const setupGuideModal = root.querySelector("#setupGuideModal");
   const fileDialogScrim = root.querySelector("#fileDialogScrim");
+  const pinFeedback = root.querySelector("#pinFeedback");
 
   // Prevent pointer clicks on buttons / switches / sliders from leaving sticky DOM
   // focus (and `:focus-visible` highlights) so Space / Enter immediately return to
@@ -976,7 +988,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       }
     },
     onPointerAudition(code, kind) {
-      if (!status.running) return;
+      if (!status.running || status.responsive === false) return;
       void api.playPreview(code, kind).catch((err) => {
         if (kind === "down") {
           setBanner("error", `Audio preview failed: ${String(err)}`);
@@ -1124,10 +1136,16 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     sidebarContainer.setAttribute("data-view", sidebarView);
     syncPaneInert();
 
+    if (sidebarView === "soundpacks" && !searchQuery.trim()) {
+      spListScroll.scrollTop = 0;
+    }
+
     if (manageFocus) {
       if (sidebarView === "soundpacks") {
         spSearchInput.focus({ preventScroll: true });
-        scrollActivePackIntoView();
+        if (searchQuery.trim()) {
+          scrollActivePackIntoView();
+        }
       } else {
         browseSoundpacksBtn.focus({ preventScroll: true });
       }
@@ -1205,17 +1223,83 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     renderCatalogList();
   }
 
+  let pinFeedbackTimer = null;
+  let pinMutationChain = Promise.resolve();
+
+  function showPinFeedback(message, durationMs = 3400) {
+    if (!pinFeedback) return;
+    if (pinFeedbackTimer) {
+      clearTimeout(pinFeedbackTimer);
+      pinFeedbackTimer = null;
+    }
+    pinFeedback.hidden = false;
+    pinFeedback.textContent = message;
+    if (durationMs > 0) {
+      pinFeedbackTimer = setTimeout(() => {
+        pinFeedbackTimer = null;
+        pinFeedback.hidden = true;
+        pinFeedback.textContent = "";
+      }, durationMs);
+    }
+  }
+
+  function togglePin(packId) {
+    if (!packId) return;
+    pinMutationChain = pinMutationChain.then(async () => {
+      const resolvedPins = resolvePinnedPacks(prefs.pinned_packs, catalog);
+      const currentlyPinned = resolvedPins.some((p) => p.id === packId);
+      try {
+        const result = await api.setPackPinned(packId, !currentlyPinned);
+        if (result?.prefs) {
+          prefs = {
+            ...prefs,
+            ...result.prefs,
+            pinned_packs: Array.isArray(result.prefs.pinned_packs)
+              ? [...result.prefs.pinned_packs]
+              : [],
+          };
+        }
+        if (result?.status === "limit") {
+          showPinFeedback(PIN_LIMIT_MESSAGE);
+          return;
+        }
+        renderCatalogList();
+      } catch (err) {
+        const confirmed = await api.getUiPrefs().catch(() => null);
+        if (confirmed) {
+          prefs = {
+            ...prefs,
+            ...confirmed,
+            pinned_packs: Array.isArray(confirmed.pinned_packs) ? [...confirmed.pinned_packs] : [],
+          };
+        }
+        renderCatalogList();
+        setBanner("error", `Could not save pinned soundpacks: ${String(err)}`);
+      }
+    });
+  }
+
   function renderCatalogList() {
     const filtered = filterCatalog(catalog, searchQuery);
     const isSearching = searchQuery.trim().length > 0;
+    const resolvedPins = resolvePinnedPacks(prefs.pinned_packs, catalog);
+    const pinnedSet = new Set(resolvedPins.map((pack) => pack.id));
+    const filteredById = new Map(filtered.map((pack) => [pack.id, pack]));
+    const matchingFavourites = resolvedPins
+      .map((pack) => filteredById.get(pack.id))
+      .filter(Boolean);
 
-    if (filtered.length === 0) {
-      spListScroll.innerHTML = `
+    if (filtered.length === 0 && isSearching) {
+      replaceCards(
+        spListScroll,
+        `
         <div class="sp-empty">
           <p class="sp-empty-text">No soundpacks match “${escapeHtml(searchQuery.trim())}”.</p>
           <button id="spEmptyClearBtn" type="button" class="sp-empty-clear">Clear search</button>
         </div>
-      `;
+      `,
+        spSearchInput,
+      );
       spListScroll.querySelector("#spEmptyClearBtn")?.addEventListener("click", () => {
         searchQuery = "";
         spSearchInput.value = "";
@@ -1226,59 +1310,63 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       return;
     }
 
+    const renderCard = (pack) =>
+      renderPackCard(pack, status.pack, pinnedSet.has(pack.id), {
+        disabled: isSwitchingPack,
+      });
+
+    const favouritesHtml =
+      !isSearching || matchingFavourites.length > 0
+        ? `
+      <section class="sp-section" aria-label="Favourites">
+        <div class="sp-section-header">
+          <span class="favourites-label">${iconMarkup("pin-filled")}Favourites</span>
+          <span class="favourites-count" title="${resolvedPins.length} of ${MAX_PINNED_PACKS} pinned">
+            ${resolvedPins.length} / ${MAX_PINNED_PACKS}
+          </span>
+        </div>
+        ${
+          matchingFavourites.length > 0
+            ? matchingFavourites.map(renderCard).join("")
+            : `<div class="sp-empty"><p class="sp-empty-text">Pin a soundpack to add it here.</p></div>`
+        }
+      </section>
+    `
+        : "";
+
     const sections = groupCatalogBySource(filtered);
     const totals = isSearching ? groupCatalogBySource(catalog) : sections;
     const sectionsHtml = Array.from(sections, ([source, items]) => {
       const total = totals.get(source).length;
       const countLabel = isSearching ? `${items.length} / ${total}` : String(total);
-      return renderPackSection(source, countLabel, items);
+      return `
+        <section class="sp-section" aria-label="${escapeHtml(source)} soundpacks">
+          <div class="sp-section-header">
+            <span>${escapeHtml(source)}</span>
+            <span>${escapeHtml(countLabel)}</span>
+          </div>
+          ${items.map(renderCard).join("")}
+        </section>
+      `;
     });
 
-    spListScroll.innerHTML = sectionsHtml.join("");
+    replaceCards(spListScroll, favouritesHtml + sectionsHtml.join(""), spSearchInput);
+  }
 
-    for (const btn of spListScroll.querySelectorAll(".sp-item")) {
-      btn.addEventListener("click", () => {
-        const packId = btn.dataset.packId;
-        if (packId) void selectPack(packId);
-      });
+  spListScroll.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const pinBtn = target.closest("[data-pin-id]");
+    if (pinBtn) {
+      void togglePin(pinBtn.dataset.pinId);
+      return;
     }
-  }
-
-  function renderPackSection(label, countText, items) {
-    return `
-      <section class="sp-section" aria-label="${escapeHtml(label)} soundpacks">
-        <div class="sp-section-header">
-          <span>${escapeHtml(label)}</span>
-          <span>${escapeHtml(countText)}</span>
-        </div>
-        ${items
-          .map((pack) => {
-            const active = pack.id === status.pack;
-            return `
-              <button
-                type="button"
-                class="sp-item"
-                data-pack-id="${escapeHtml(pack.id)}"
-                aria-current="${active ? "true" : "false"}"
-                ${isSwitchingPack ? "disabled" : ""}
-              >
-                <span class="sp-item-badge" aria-hidden="true">${iconMarkup("keyboard")}</span>
-                <span class="sp-item-copy">
-                  <span class="sp-item-name">${escapeHtml(pack.display_name)}</span>
-                  <span class="sp-item-sub">${escapeHtml(pack.subtitle)}</span>
-                </span>
-                ${
-                  active
-                    ? `<span class="sp-item-check" aria-label="Active soundpack">${iconMarkup("check")}</span>`
-                    : ""
-                }
-              </button>
-            `;
-          })
-          .join("")}
-      </section>
-    `;
-  }
+    const packBtn = target.closest("[data-pack-id]");
+    if (packBtn && !packBtn.disabled) {
+      const packId = packBtn.dataset.packId;
+      if (packId) void selectPack(packId);
+    }
+  });
 
   function scrollActivePackIntoView() {
     const activeBtn = spListScroll.querySelector('.sp-item[aria-current="true"]');
@@ -1296,12 +1384,24 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
   // ── Engine Mutations (serialized & reconciled) ────────────────────────────
   async function reconcileAll() {
     try {
-      const [freshCatalog, freshStatus] = await Promise.all([
+      const [freshCatalog, freshStatus, freshPrefs] = await Promise.all([
         api.listPackCatalog(),
         api.getStatus(),
+        api.getUiPrefs().catch(() => null),
       ]);
       catalog = freshCatalog;
       status = freshStatus;
+      if (freshPrefs) {
+        prefs = {
+          ...prefs,
+          ...freshPrefs,
+          pinned_packs: Array.isArray(freshPrefs.pinned_packs) ? [...freshPrefs.pinned_packs] : [],
+        };
+        applyTheme();
+        animateToggle.setAttribute("aria-checked", prefs.animate_mascot ? "true" : "false");
+        stage.setAnimated(prefs.animate_mascot);
+        trinket?.setAnimated(prefs.animate_mascot);
+      }
       renderStatus();
     } catch (err) {
       setBanner("error", `Could not read engine state: ${String(err)}`);
@@ -1317,8 +1417,10 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       const confirmed = await api.setPack(packId);
       status = confirmed;
       renderStatus();
-      // Audition one gentle centered key sample from the confirmed pack
-      void api.playPreview(null, "down").catch(() => {});
+      // Audition one gentle centered key sample from the confirmed pack only when enabled
+      if (confirmed.running && confirmed.responsive !== false) {
+        void api.playPreview(null, "down").catch(() => {});
+      }
     } catch (err) {
       const fresh = await api.getStatus().catch(() => status);
       status = fresh;
@@ -1563,7 +1665,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     }
   });
 
-  // Animate Thocci toggle (persisted separately in ui-prefs.json)
+  // Animate Thocci toggle (persisted separately in ui-prefs.json via field-specific patch)
   animateToggle.addEventListener("click", async () => {
     if (!status.running) return;
     const nextVal = !prefs.animate_mascot;
@@ -1572,7 +1674,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     stage.setAnimated(nextVal);
     trinket?.setAnimated(nextVal);
     try {
-      prefs = await api.saveUiPrefs(prefs);
+      prefs = await api.saveUiPrefs({ animate_mascot: nextVal });
     } catch (err) {
       setBanner("error", `Could not save animation preference: ${String(err)}`);
     }
@@ -1731,7 +1833,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
     const nextTheme = resolvedTheme() === "dark" ? "light" : "dark";
     transitionTheme(nextTheme, async () => {
       try {
-        prefs = await api.saveUiPrefs(prefs);
+        prefs = await api.saveUiPrefs({ theme: nextTheme });
       } catch (err) {
         setBanner("error", `Could not save theme preference: ${String(err)}`);
       }
@@ -1816,7 +1918,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
           <section class="guide-section">
             <h3>2. Soundpacks &amp; local WAV import</h3>
             <ul>
-              <li>Click any key on the keyboard to audition the active soundpack even while background playback is off.</li>
+              <li>Enable Thocci to hear physical keystrokes or click any key on the keyboard to audition the active soundpack.</li>
               <li>Use <strong>Import WAV</strong> to add any local <code class="guide-code">.wav</code> clip (up to 10 s / 10 MB). Imported packs stay on your device and work in both the GUI and <code class="guide-code">thocci</code> CLI.</li>
               <li>Changes stay synchronized with the CLI: try <code class="guide-code">thocci status</code>, <code class="guide-code">thocci packs</code>, or <code class="guide-code">thocci volume 60</code>.</li>
             </ul>
@@ -2029,11 +2131,16 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
 
   const unlistenPrefs = await listenEvent("thocci://prefs-changed", (nextPrefs) => {
     if (nextPrefs) {
-      prefs = nextPrefs;
+      prefs = {
+        ...prefs,
+        ...nextPrefs,
+        pinned_packs: Array.isArray(nextPrefs.pinned_packs) ? [...nextPrefs.pinned_packs] : [],
+      };
       applyTheme();
       animateToggle.setAttribute("aria-checked", prefs.animate_mascot ? "true" : "false");
       stage.setAnimated(prefs.animate_mascot);
       trinket?.setAnimated(prefs.animate_mascot);
+      renderCatalogList();
     }
   });
 
@@ -2095,6 +2202,7 @@ export async function mountDashboard(root, { initialPrefs, initialRoute = null }
       if (modalAnimTimer) clearTimeout(modalAnimTimer);
       if (stageSwapTimer) clearTimeout(stageSwapTimer);
       if (updateCheckTimer) clearTimeout(updateCheckTimer);
+      if (pinFeedbackTimer) clearTimeout(pinFeedbackTimer);
       typingGame?.destroy();
       clearTypedStream();
       cleanupThemeTransition();

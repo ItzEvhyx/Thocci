@@ -12,7 +12,18 @@ import {
   isPointerBlurControl,
   isTextEditableElement,
 } from "../src/dashboard.js";
-import { computeQuickActionsGaze } from "../src/quick-actions.js";
+import {
+  computeQuickActionsGaze,
+  computeQuickActionsLayout,
+  QA_COLLAPSED_HEIGHT,
+  QA_MAX_EXPANDED_HEIGHT,
+} from "../src/quick-actions.js";
+import {
+  MAX_PINNED_PACKS,
+  PIN_LIMIT_MESSAGE,
+  renderPackCard,
+  resolvePinnedPacks,
+} from "../src/pack-cards.js";
 import {
   TRINKET_CADENCE_RESET_MS,
   TRINKET_KEY_POSITIONS,
@@ -523,4 +534,174 @@ test("Stereo audio toggle defaults off, persists via bridge mock, and sits betwe
   // Disabled-state CSS must keep Stereo audio interactive when playback is off
   const cssSrc = fs.readFileSync(path.join(root, "ui", "styles", "app.css"), "utf8");
   assert.equal(cssSrc.includes("#stereoRow"), false);
+});
+
+test("favourites helpers resolve built-in and imported packs, dedupe, drop stale IDs, and cap at 10", () => {
+  const catalog = Array.from({ length: 12 }, (_, idx) => ({
+    id: idx === 11 ? "imported-thock" : `pack-${idx + 1}`,
+    display_name: idx === 11 ? "Imported Thock" : `Pack ${idx + 1}`,
+    subtitle: idx === 11 ? "Imported WAV" : "Built-in soundpack",
+    origin: idx === 11 ? "imported" : "builtin",
+  }));
+
+  const rawPins = [
+    "stale-missing",
+    "pack-3",
+    "pack-1",
+    "pack-3", // duplicate
+    "imported-thock",
+    "pack-2",
+    "pack-4",
+    "pack-5",
+    "pack-6",
+    "pack-7",
+    "pack-8",
+    "pack-9",
+    "pack-10", // 11th valid unique pack -> capped at 10
+  ];
+  const resolved = resolvePinnedPacks(rawPins, catalog);
+  assert.equal(resolved.length, MAX_PINNED_PACKS);
+  assert.deepEqual(
+    resolved.map((p) => p.id),
+    [
+      "pack-3",
+      "pack-1",
+      "imported-thock",
+      "pack-2",
+      "pack-4",
+      "pack-5",
+      "pack-6",
+      "pack-7",
+      "pack-8",
+      "pack-9",
+    ],
+  );
+
+  // Sibling buttons with distinct accessible names and pin state
+  const cardPinned = renderPackCard(
+    { id: "creamy", display_name: "Creamy", subtitle: "Soft and muted" },
+    "creamy",
+    true,
+    { disabled: true },
+  );
+  assert.match(cardPinned, /class="pack-card" data-active="true"/);
+  assert.match(cardPinned, /class="sp-item" data-pack-id="creamy"[\s\S]*aria-current="true"[\s\S]*disabled/);
+  assert.match(cardPinned, /class="pack-pin" data-pin-id="creamy"[\s\S]*aria-pressed="true" aria-label="Unpin Creamy"/);
+  assert.equal(/class="pack-pin"[^>]*disabled/.test(cardPinned), false);
+
+  const cardUnpinned = renderPackCard(
+    { id: "creamy", display_name: "Creamy", subtitle: "Soft and muted" },
+    "cherry-mx",
+    false,
+  );
+  assert.match(cardUnpinned, /aria-pressed="false" aria-label="Pin Creamy"/);
+});
+
+test("Quick Actions layout sizing shows 4 whole cards plus 5th slice, avoids overflow for <=4, and clamps short displays", () => {
+  const collapsed = computeQuickActionsLayout({ expanded: false, pinCount: 8 });
+  assert.equal(collapsed.shellHeight, QA_COLLAPSED_HEIGHT);
+  assert.equal(collapsed.panelHeight, 0);
+
+  const empty = computeQuickActionsLayout({ expanded: true, pinCount: 0 });
+  assert.equal(empty.listHeight, 60);
+  assert.equal(empty.shellHeight, 393);
+
+  const two = computeQuickActionsLayout({ expanded: true, pinCount: 2 });
+  assert.equal(two.listHeight, 111);
+  assert.equal(two.shellHeight, 444);
+
+  const four = computeQuickActionsLayout({ expanded: true, pinCount: 4 });
+  assert.equal(four.listHeight, 229);
+  assert.equal(four.shellHeight, 562);
+
+  const six = computeQuickActionsLayout({ expanded: true, pinCount: 6 });
+  assert.equal(six.listHeight, 255); // 4*52 + 3*7 + 7 + 19px slice of 5th
+  assert.equal(six.shellHeight, QA_MAX_EXPANDED_HEIGHT);
+
+  // Constrained 460px display keeps shell <= 460 and list scrollable
+  const shortScreen = computeQuickActionsLayout({ expanded: true, pinCount: 10, maxHeight: 460 });
+  assert.equal(shortScreen.shellHeight, 460);
+  assert.equal(shortScreen.panelHeight, 140);
+  assert.equal(shortScreen.listHeight, 127);
+});
+
+test("bridge mock enforces silent preview while off and 10-pin capacity cleanly", async () => {
+  const prevWindow = globalThis.window;
+  globalThis.window = {};
+  try {
+    await api.stopDaemon();
+    assert.equal(await api.playPreview("Space", "down"), false);
+
+    await api.startDaemon();
+    assert.equal(await api.playPreview("Space", "down"), true);
+
+    const p1 = await api.setPackPinned("creamy", true);
+    assert.equal(p1.status, "pinned");
+    assert.deepEqual(p1.prefs.pinned_packs, ["creamy"]);
+
+    const p2 = await api.setPackPinned("banana-split", true);
+    assert.equal(p2.status, "pinned");
+    assert.deepEqual(p2.prefs.pinned_packs, ["creamy", "banana-split"]);
+
+    const u1 = await api.setPackPinned("creamy", false);
+    assert.equal(u1.status, "unpinned");
+    assert.deepEqual(u1.prefs.pinned_packs, ["banana-split"]);
+
+    await api.setPackPinned("banana-split", false);
+    await api.stopDaemon();
+    assert.equal(await api.playPreview("Space", "down"), false);
+  } finally {
+    if (prevWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = prevWindow;
+    }
+  }
+});
+
+test("favourites, pin icons, silent onboarding, and flat warning feedback match favorites.md", () => {
+  assert.ok(fs.existsSync(path.join(root, "assets", "desktop", "icons", "pin.svg")));
+  assert.ok(fs.existsSync(path.join(root, "assets", "desktop", "icons", "pin-filled.svg")));
+
+  const onboardingSrc = fs.readFileSync(path.join(root, "ui", "src", "onboarding.js"), "utf8");
+  assert.equal(onboardingSrc.includes("playPreview"), false, "onboarding must never audition audio");
+
+  const dashboardSrc = fs.readFileSync(path.join(root, "ui", "src", "dashboard.js"), "utf8");
+  assert.ok(dashboardSrc.includes("Favourites"), "dashboard must use Favourites spelling");
+  assert.ok(dashboardSrc.includes("Pin a soundpack to add it here."));
+  assert.equal(PIN_LIMIT_MESSAGE, "You can pin up to 10 soundpacks. Unpin one to make room.");
+  assert.match(dashboardSrc, /api\.saveUiPrefs\(\{\s*theme:\s*nextTheme\s*\}\)/);
+  assert.match(dashboardSrc, /api\.saveUiPrefs\(\{\s*animate_mascot:\s*nextVal\s*\}\)/);
+
+  const qaSrc = fs.readFileSync(path.join(root, "ui", "src", "quick-actions.js"), "utf8");
+  assert.match(qaSrc, /let expanded = false;/, "Quick Actions Pinned must start collapsed");
+  assert.ok(qaSrc.includes("Pin a soundpack from the Soundpacks sidebar."));
+  assert.ok(qaSrc.includes("getFocusableElements"));
+
+  const cssSrc = fs.readFileSync(path.join(root, "ui", "styles", "app.css"), "utf8");
+  assert.match(
+    cssSrc,
+    /\.pin-feedback\s*\{[\s\S]*border:\s*0;[\s\S]*background:\s*var\(--warn-text\);[\s\S]*color:\s*var\(--warn-bg\);/,
+  );
+  // Keycap button style stays scoped strictly to Quick Actions pinned cards; desktop app keeps standard styles
+  assert.match(
+    cssSrc,
+    /\.qa-pinned-list \.pack-card\s*\{[\s\S]*border-radius:\s*7px;[\s\S]*border:\s*1px solid #D5D8E2;[\s\S]*background:\s*#F8F9FC;[\s\S]*box-shadow:\s*0 2\.5px 0 #C8CBD3, inset 0 1px 0 #FFFFFF;/,
+  );
+  assert.match(
+    cssSrc,
+    /\.qa-pinned-list \.pack-card\[data-active="true"\]\s*\{[\s\S]*background:\s*linear-gradient\(180deg, #EEF2FF 0%, #DFE8FF 100%\);/,
+  );
+  assert.match(
+    cssSrc,
+    /^\.pack-card\s*\{[\s\S]*border-radius:\s*var\(--radius-row\);[\s\S]*background:\s*var\(--bg-raised\);/m,
+  );
+  assert.match(
+    cssSrc,
+    /^\.sidebar-row\s*\{[\s\S]*border-radius:\s*var\(--radius-row\);[\s\S]*background:\s*var\(--bg-raised\);/m,
+  );
+  assert.match(
+    cssSrc,
+    /^\.theme-pill\s*\{[\s\S]*border-radius:\s*var\(--radius-pill\);[\s\S]*background:\s*var\(--bg-raised\);/m,
+  );
 });

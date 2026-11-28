@@ -11,9 +11,9 @@ use crate::control::ControlServer;
 use crate::input::{create_listener, KeyEvent, KeyEventKind};
 use crate::keymap;
 use crate::paths::{
-    clamp_percent, ensure_state_dir, parse_stereo_flag, pid_file, read_pid_file, read_saved_pack,
-    read_saved_stereo, read_saved_volume, remove_if_exists, write_saved_pack, write_saved_stereo,
-    write_saved_volume,
+    clamp_percent, ensure_state_dir, owner_file, parse_stereo_flag, pid_file, read_pid_file,
+    read_saved_pack, read_saved_stereo, read_saved_volume, remove_if_exists, write_daemon_owner,
+    write_saved_pack, write_saved_stereo, write_saved_volume, SessionOwner,
 };
 use crate::process::pid_is_running;
 use crate::soundpack::Soundpack;
@@ -25,6 +25,9 @@ pub struct DaemonConfig {
     pub pack_dir: Option<PathBuf>,
     pub pack_id: Option<String>,
     pub volume: Option<u8>,
+    /// When set, the daemon is owned by this desktop app PID and exits
+    /// automatically if the owning process terminates (owner loss).
+    pub owner_pid: Option<u32>,
 }
 
 struct SharedState {
@@ -33,6 +36,8 @@ struct SharedState {
     pack_id: Mutex<String>,
     volume_percent: AtomicU8,
     stereo: AtomicBool,
+    owner: SessionOwner,
+    ready: AtomicBool,
     stop: AtomicBool,
     audio_recovery_pending: AtomicBool,
     stop_lock: Mutex<()>,
@@ -42,6 +47,8 @@ struct SharedState {
 impl SharedState {
     fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
+        self.ready.store(false, Ordering::Release);
+        self.audio.clear();
         let _guard = self.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.stop_signal.notify_all();
     }
@@ -83,8 +90,19 @@ impl SharedState {
         let cmd = parts.next().unwrap_or("").to_ascii_lowercase();
 
         match cmd.as_str() {
-            "ping" => "OK pong".to_owned(),
+            "ping" => {
+                if self.stop.load(Ordering::Acquire) {
+                    "ERR stopping".to_owned()
+                } else if !self.ready.load(Ordering::Acquire) {
+                    "ERR starting".to_owned()
+                } else {
+                    "OK pong".to_owned()
+                }
+            }
             "status" => {
+                if self.stop.load(Ordering::Acquire) {
+                    return "ERR stopping".to_owned();
+                }
                 let vol = self.volume_percent.load(Ordering::Relaxed);
                 let stereo = if self.stereo.load(Ordering::Acquire) {
                     "on"
@@ -96,7 +114,8 @@ impl SharedState {
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .clone();
-                format!("OK running volume={vol} pack={pack} stereo={stereo}")
+                let owner_tag = self.owner.to_tag();
+                format!("OK running volume={vol} pack={pack} stereo={stereo} owner={owner_tag}")
             }
             "volume" => self.cmd_volume(parts.next()),
             "pack" => self.cmd_pack(parts.next()),
@@ -163,6 +182,9 @@ impl SharedState {
     }
 
     fn on_key_event(&self, event: KeyEvent) {
+        if !self.ready.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {
+            return;
+        }
         let pack = {
             let guard = self.pack.read().unwrap_or_else(|e| e.into_inner());
             Arc::clone(&guard)
@@ -191,15 +213,27 @@ pub fn run_daemon(config: DaemonConfig) -> Result<()> {
     apply_low_latency_env();
     init_logging();
     ensure_state_dir()?;
-    claim_pid_file()?;
+    let owner = config
+        .owner_pid
+        .filter(|&pid| pid > 0)
+        .map(SessionOwner::Desktop)
+        .unwrap_or(SessionOwner::Cli);
+    claim_pid_file(owner)?;
 
-    let result = run_daemon_inner(config);
+    let result = run_daemon_inner(config, owner);
     release_pid_file();
     log::info!("Thocci daemon stopped");
     result
 }
 
-fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
+fn run_daemon_inner(config: DaemonConfig, owner: SessionOwner) -> Result<()> {
+    if let SessionOwner::Desktop(owner_pid) = owner {
+        if !pid_is_running(owner_pid) {
+            log::info!("Desktop owner pid {owner_pid} exited before startup completed; aborting");
+            return Ok(());
+        }
+    }
+
     let volume_percent = config.volume.unwrap_or_else(read_saved_volume).min(100);
     // Decode the initial soundpack BEFORE opening the live audio stream so OGG/WAV
     // decoding never starves a freshly opened Bluetooth/headphone stream with xruns.
@@ -214,12 +248,13 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
     }
     audio.reset_watchdog();
     log::info!(
-        "Loaded soundpack '{}' ({}, {} keys, {} Hz) at volume {}%",
+        "Loaded soundpack '{}' ({}, {} keys, {} Hz) at volume {}% (owner={})",
         pack.info().name,
         pack_id,
         pack.key_count(),
         active_rate,
         volume_percent,
+        owner.to_tag(),
     );
 
     let stereo_enabled = read_saved_stereo();
@@ -229,6 +264,8 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
         pack_id: Mutex::new(pack_id),
         volume_percent: AtomicU8::new(volume_percent),
         stereo: AtomicBool::new(stereo_enabled),
+        owner,
+        ready: AtomicBool::new(false),
         stop: AtomicBool::new(false),
         audio_recovery_pending: AtomicBool::new(false),
         stop_lock: Mutex::new(()),
@@ -249,32 +286,59 @@ fn run_daemon_inner(config: DaemonConfig) -> Result<()> {
     let ctrl_state = Arc::clone(&state);
     let mut control = ControlServer::start(Arc::new(move |cmd| ctrl_state.handle_command(cmd)))?;
 
-    let check_interval = Duration::from_secs(2);
-    let mut last_device_check = Instant::now();
-    let mut stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
-    while !state.stop.load(Ordering::Acquire) {
-        let recovery_requested = state.audio_recovery_pending.swap(false, Ordering::AcqRel);
-        let remaining = check_interval.saturating_sub(last_device_check.elapsed());
-        if recovery_requested || remaining.is_zero() {
-            drop(stop_guard);
-            if state.audio.check_device_change() {
-                state.sync_pack_sample_rate();
-            }
-            last_device_check = Instant::now();
-            stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
-            continue;
-        }
-        let (next_guard, _) = state
-            .stop_signal
-            .wait_timeout(stop_guard, remaining)
-            .unwrap_or_else(|e| e.into_inner());
-        stop_guard = next_guard;
+    // Only enable keystroke playback once both the input listener and control
+    // server are active and stoppable.
+    if !state.stop.load(Ordering::Acquire) {
+        state.ready.store(true, Ordering::Release);
     }
-    drop(stop_guard);
 
+    let device_check_interval = Duration::from_secs(2);
+    let owner_check_interval = Duration::from_millis(250);
+    let mut last_device_check = Instant::now();
+    {
+        let mut stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
+        while !state.stop.load(Ordering::Acquire) {
+            if let SessionOwner::Desktop(owner_pid) = state.owner {
+                if !pid_is_running(owner_pid) {
+                    log::info!(
+                        "Desktop owner pid {owner_pid} is no longer running; stopping desktop playback session"
+                    );
+                    drop(stop_guard);
+                    state.request_stop();
+                    break;
+                }
+            }
+
+            let recovery_requested = state.audio_recovery_pending.swap(false, Ordering::AcqRel);
+            let remaining_device =
+                device_check_interval.saturating_sub(last_device_check.elapsed());
+            if recovery_requested || remaining_device.is_zero() {
+                drop(stop_guard);
+                if state.audio.check_device_change() {
+                    state.sync_pack_sample_rate();
+                }
+                last_device_check = Instant::now();
+                stop_guard = state.stop_lock.lock().unwrap_or_else(|e| e.into_inner());
+                continue;
+            }
+            let wait_for = match state.owner {
+                SessionOwner::Desktop(_) => remaining_device.min(owner_check_interval),
+                SessionOwner::Cli => remaining_device,
+            };
+            let (next_guard, _) = state
+                .stop_signal
+                .wait_timeout(stop_guard, wait_for)
+                .unwrap_or_else(|e| e.into_inner());
+            stop_guard = next_guard;
+        }
+    }
+    state.ready.store(false, Ordering::Release);
+
+    // Silence & drop audio immediately before joining the listener/control threads
+    // so Disable/Quit/owner-loss never emits trailing thocks or held-key releases.
+    state.audio.shutdown();
     listener.stop();
     control.stop();
-    state.audio.shutdown();
     Ok(())
 }
 
@@ -305,7 +369,7 @@ fn init_logging() {
         .try_init();
 }
 
-fn claim_pid_file() -> Result<()> {
+fn claim_pid_file(owner: SessionOwner) -> Result<()> {
     if let Some(old_pid) = read_pid_file() {
         if old_pid != std::process::id() && pid_is_running(old_pid) {
             return Err(Error::new(format!(
@@ -313,13 +377,16 @@ fn claim_pid_file() -> Result<()> {
             )));
         }
         remove_if_exists(pid_file());
+        remove_if_exists(owner_file());
     }
     std::fs::write(pid_file(), std::process::id().to_string())?;
+    let _ = write_daemon_owner(owner);
     Ok(())
 }
 
 fn release_pid_file() {
     if read_pid_file() == Some(std::process::id()) {
         remove_if_exists(pid_file());
+        remove_if_exists(owner_file());
     }
 }

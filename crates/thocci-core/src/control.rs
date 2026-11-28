@@ -77,8 +77,6 @@ impl ControlServer {
             .set_nonblocking(true)
             .map_err(|err| Error::new(format!("Could not set nonblocking listener: {err}")))?;
 
-        write_control_port(port)?;
-
         let stop = Arc::new(AtomicBool::new(false));
         let loop_stop = Arc::clone(&stop);
         let thread = thread::Builder::new()
@@ -86,12 +84,18 @@ impl ControlServer {
             .spawn(move || serve_loop(listener, handler, loop_stop))
             .map_err(|err| Error::new(format!("Could not spawn control thread: {err}")))?;
 
-        log::info!("Control server listening on {CONTROL_HOST}:{port}");
-        Ok(Self {
+        let mut server = Self {
             port,
             stop,
             thread: Some(thread),
-        })
+        };
+        if let Err(err) = write_control_port(port) {
+            server.stop();
+            return Err(err.into());
+        }
+
+        log::info!("Control server listening on {CONTROL_HOST}:{port}");
+        Ok(server)
     }
 
     pub fn port(&self) -> u16 {

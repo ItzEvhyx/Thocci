@@ -19,13 +19,13 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 #[cfg(not(target_os = "linux"))]
 use tauri::menu::MenuItem;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, Rect, RunEvent, WindowEvent, Wry};
 use tauri_plugin_dialog::DialogExt;
 use thocci_core::client::{self, DaemonStatus, StartOptions};
 use thocci_core::soundpack::{self, BuiltinPackMeta, PackCatalogEntry};
 
 use crate::platform::PlatformInfo;
-use crate::prefs::UiPrefs;
+use crate::prefs::{PinMutationResult, PinMutationStatus, UiPrefs, UiPrefsPatch};
 use crate::preview::PreviewPlayer;
 
 const ONBOARDING_WIDTH: f64 = 480.0;
@@ -60,6 +60,9 @@ pub struct QuickActionsPlacement {
     pub screen_width: i32,
     #[serde(rename = "screenHeight")]
     pub screen_height: i32,
+    #[serde(rename = "maxHeight")]
+    pub max_height: i32,
+    pub animate: bool,
 }
 
 #[cfg(target_os = "linux")]
@@ -70,6 +73,7 @@ pub(crate) struct AppState {
     pub preview: Arc<PreviewPlayer>,
     pub tray_available: AtomicBool,
     pub confirmed_stereo: AtomicBool,
+    pub playback_enabled: AtomicBool,
     pub has_confirmed_status: AtomicBool,
     #[cfg(target_os = "linux")]
     pub linux_tray_handle: Mutex<Option<ksni::Handle<tray::LinuxTray>>>,
@@ -77,9 +81,12 @@ pub(crate) struct AppState {
     pub tray_toggle_item: Mutex<Option<MenuItem<Wry>>>,
     pub last_quick_actions_blur_ms: AtomicU64,
     pub last_quick_actions_show_ms: AtomicU64,
+    pub quick_actions_height: Mutex<f64>,
+    pub last_quick_actions_anchor: Mutex<Option<Rect>>,
     pub last_quick_actions_placement: Mutex<Option<QuickActionsPlacement>>,
     pub pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
     pub is_quitting: AtomicBool,
+    pub shutdown_started: AtomicBool,
 }
 
 impl Default for AppState {
@@ -89,6 +96,7 @@ impl Default for AppState {
             preview: Arc::new(PreviewPlayer::new()),
             tray_available: AtomicBool::new(false),
             confirmed_stereo: AtomicBool::new(false),
+            playback_enabled: AtomicBool::new(false),
             has_confirmed_status: AtomicBool::new(false),
             #[cfg(target_os = "linux")]
             linux_tray_handle: Mutex::new(None),
@@ -96,9 +104,12 @@ impl Default for AppState {
             tray_toggle_item: Mutex::new(None),
             last_quick_actions_blur_ms: AtomicU64::new(0),
             last_quick_actions_show_ms: AtomicU64::new(0),
+            quick_actions_height: Mutex::new(tray::QUICK_ACTIONS_COLLAPSED_H),
+            last_quick_actions_anchor: Mutex::new(None),
             last_quick_actions_placement: Mutex::new(None),
             pending_update: Mutex::new(None),
             is_quitting: AtomicBool::new(false),
+            shutdown_started: AtomicBool::new(false),
         }
     }
 }
@@ -139,32 +150,83 @@ async fn list_pack_catalog() -> Result<Vec<PackCatalogEntry>, String> {
 
 #[tauri::command]
 async fn start_daemon(app: AppHandle<Wry>, volume: Option<i64>) -> Result<DaemonStatus, String> {
-    let lock = Arc::clone(&app.state::<AppState>().engine_lock);
-    let status = tauri::async_runtime::spawn_blocking(move || {
+    let state = app.state::<AppState>();
+    if state.is_quitting.load(Ordering::Acquire) {
+        return Err("Thocci is shutting down".to_owned());
+    }
+    let lock = Arc::clone(&state.engine_lock);
+    let preview = Arc::clone(&state.preview);
+    let app_check = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if app_check
+            .state::<AppState>()
+            .is_quitting
+            .load(Ordering::Acquire)
+        {
+            preview.quiesce();
+            return Err("Thocci is shutting down".to_owned());
+        }
         let exe = resolve_daemon_exe().map_err(|err| err.to_string())?;
-        client::start(
+        let started = client::start(
             &exe,
             StartOptions {
                 pack_dir: None,
                 volume,
+                owner_pid: Some(std::process::id()),
             },
         )
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string());
+        if started.is_err() {
+            preview.quiesce();
+        }
+        started
     })
     .await
-    .map_err(|err| err.to_string())??;
+    .map_err(|err| err.to_string())?;
 
-    broadcast_status(&app, &status);
-    Ok(status)
+    match result {
+        Ok(status) => {
+            if app.state::<AppState>().is_quitting.load(Ordering::Acquire) {
+                let lock = Arc::clone(&app.state::<AppState>().engine_lock);
+                let preview = Arc::clone(&app.state::<AppState>().preview);
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    preview.quiesce();
+                    let _ = client::stop();
+                })
+                .await;
+                return Err("Thocci is shutting down".to_owned());
+            }
+            broadcast_status(&app, &status);
+            Ok(status)
+        }
+        Err(err) => {
+            let st = tauri::async_runtime::spawn_blocking(client::status)
+                .await
+                .ok();
+            if let Some(st) = st {
+                broadcast_status(&app, &st);
+            }
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]
 async fn stop_daemon(app: AppHandle<Wry>) -> Result<DaemonStatus, String> {
-    let lock = Arc::clone(&app.state::<AppState>().engine_lock);
+    let state = app.state::<AppState>();
+    // Immediately quiesce preview audio and block new previews before waiting on engine_lock.
+    state.playback_enabled.store(false, Ordering::Release);
+    state.preview.quiesce();
+
+    let lock = Arc::clone(&state.engine_lock);
+    let preview = Arc::clone(&state.preview);
     let status = tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        preview.quiesce();
         client::stop().map_err(|err| err.to_string())?;
+        preview.shutdown();
         Ok::<DaemonStatus, String>(client::status())
     })
     .await
@@ -180,29 +242,79 @@ async fn toggle_daemon(app: AppHandle<Wry>) -> Result<DaemonStatus, String> {
 }
 
 pub(crate) async fn toggle_daemon_internal(app: AppHandle<Wry>) -> Result<DaemonStatus, String> {
-    let lock = Arc::clone(&app.state::<AppState>().engine_lock);
-    let status = tauri::async_runtime::spawn_blocking(move || {
+    let state = app.state::<AppState>();
+    let lock = Arc::clone(&state.engine_lock);
+    let preview = Arc::clone(&state.preview);
+    let app_check = app.clone();
+
+    // If a daemon is currently running, quiesce preview audio immediately so
+    // held keys / delayed preview clicks stay silent while acquiring engine_lock.
+    if state.playback_enabled.load(Ordering::Acquire) {
+        state.playback_enabled.store(false, Ordering::Release);
+        state.preview.quiesce();
+    }
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
         if client::running_pid().is_some() {
+            preview.quiesce();
             client::stop().map_err(|err| err.to_string())?;
+            preview.shutdown();
             Ok::<DaemonStatus, String>(client::status())
         } else {
+            if app_check
+                .state::<AppState>()
+                .is_quitting
+                .load(Ordering::Acquire)
+            {
+                preview.quiesce();
+                return Err("Thocci is shutting down".to_owned());
+            }
             let exe = resolve_daemon_exe().map_err(|err| err.to_string())?;
-            client::start(
+            let started = client::start(
                 &exe,
                 StartOptions {
                     pack_dir: None,
                     volume: None,
+                    owner_pid: Some(std::process::id()),
                 },
             )
-            .map_err(|err| err.to_string())
+            .map_err(|err| err.to_string());
+            if started.is_err() {
+                preview.quiesce();
+            }
+            started
         }
     })
     .await
-    .map_err(|err| err.to_string())??;
+    .map_err(|err| err.to_string())?;
 
-    broadcast_status(&app, &status);
-    Ok(status)
+    match result {
+        Ok(status) => {
+            if status.running && app.state::<AppState>().is_quitting.load(Ordering::Acquire) {
+                let lock = Arc::clone(&app.state::<AppState>().engine_lock);
+                let preview = Arc::clone(&app.state::<AppState>().preview);
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+                    preview.quiesce();
+                    let _ = client::stop();
+                })
+                .await;
+                return Err("Thocci is shutting down".to_owned());
+            }
+            broadcast_status(&app, &status);
+            Ok(status)
+        }
+        Err(err) => {
+            let st = tauri::async_runtime::spawn_blocking(client::status)
+                .await
+                .ok();
+            if let Some(st) = st {
+                broadcast_status(&app, &st);
+            }
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]
@@ -365,26 +477,30 @@ async fn play_preview(
     kind: Option<String>,
 ) -> Result<bool, String> {
     let state = app.state::<AppState>();
+    if state.is_quitting.load(Ordering::Acquire) || !state.playback_enabled.load(Ordering::Acquire)
+    {
+        return Ok(false);
+    }
     let preview = Arc::clone(&state.preview);
-    let cached_stereo = if state.has_confirmed_status.load(Ordering::Acquire) {
-        Some(state.confirmed_stereo.load(Ordering::Acquire))
-    } else {
-        None
-    };
     let app_handle = app.clone();
     let kind_str = kind.unwrap_or_else(|| "down".to_owned());
     tauri::async_runtime::spawn_blocking(move || {
-        let stereo = match cached_stereo {
-            Some(confirmed) => confirmed,
-            None => {
-                let st = client::status();
-                record_confirmed_status(&app_handle, &st);
-                st.stereo
-            }
-        };
-        let pack = thocci_core::paths::read_saved_pack();
-        let volume = thocci_core::paths::read_saved_volume();
-        preview.play(code.as_deref(), &kind_str, &pack, volume, stereo)
+        let state = app_handle.state::<AppState>();
+        if state.is_quitting.load(Ordering::Acquire)
+            || !state.playback_enabled.load(Ordering::Acquire)
+        {
+            return Ok(false);
+        }
+        // Verify the shared engine is actually running and responsive before
+        // playing a preview so Off, starting, failed, or tearing-down states
+        // never emit sound from saved settings.
+        let st = client::status();
+        record_confirmed_status(&app_handle, &st);
+        if state.is_quitting.load(Ordering::Acquire) || !st.running || !st.responsive {
+            preview.quiesce();
+            return Ok(false);
+        }
+        preview.play(code.as_deref(), &kind_str, &st.pack, st.volume, st.stereo)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -398,12 +514,33 @@ async fn get_ui_prefs() -> Result<UiPrefs, String> {
 }
 
 #[tauri::command]
-async fn save_ui_prefs(app: AppHandle<Wry>, prefs_update: UiPrefs) -> Result<UiPrefs, String> {
-    let saved = tauri::async_runtime::spawn_blocking(move || prefs::save_prefs(&prefs_update))
+async fn save_ui_prefs(app: AppHandle<Wry>, prefs_update: UiPrefsPatch) -> Result<UiPrefs, String> {
+    let saved = tauri::async_runtime::spawn_blocking(move || prefs::patch_prefs(prefs_update))
         .await
         .map_err(|err| err.to_string())??;
     let _ = app.emit("thocci://prefs-changed", &saved);
     Ok(saved)
+}
+
+#[tauri::command]
+async fn set_pack_pinned(
+    app: AppHandle<Wry>,
+    pack_id: String,
+    pinned: bool,
+) -> Result<PinMutationResult, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        prefs::set_pack_pinned(&pack_id, pinned, soundpack::is_known_pack)
+    })
+    .await
+    .map_err(|err| err.to_string())??;
+
+    if matches!(
+        result.status,
+        PinMutationStatus::Pinned | PinMutationStatus::Unpinned
+    ) {
+        let _ = app.emit("thocci://prefs-changed", &result.prefs);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -412,11 +549,12 @@ async fn set_window_size(
     width: Option<u32>,
     height: Option<u32>,
 ) -> Result<UiPrefs, String> {
-    let saved = tauri::async_runtime::spawn_blocking(move || {
-        let mut current = prefs::load_prefs();
-        current.window_width = width;
-        current.window_height = height;
-        prefs::save_prefs(&current)
+    let (saved, _) = tauri::async_runtime::spawn_blocking(move || {
+        prefs::update_prefs(|current| {
+            current.window_width = width;
+            current.window_height = height;
+            Ok(())
+        })
     })
     .await
     .map_err(|err| err.to_string())??;
@@ -516,11 +654,12 @@ async fn set_overlay_rect(
     let _ = (x, y);
 
     if persist_size.unwrap_or(false) {
-        let saved = tauri::async_runtime::spawn_blocking(move || {
-            let mut current = prefs::load_prefs();
-            current.window_width = Some(clamped_w as u32);
-            current.window_height = Some(clamped_h as u32);
-            prefs::save_prefs(&current)
+        let (saved, _) = tauri::async_runtime::spawn_blocking(move || {
+            prefs::update_prefs(|current| {
+                current.window_width = Some(clamped_w as u32);
+                current.window_height = Some(clamped_h as u32);
+                Ok(())
+            })
         })
         .await
         .map_err(|e| e.to_string())??;
@@ -540,11 +679,26 @@ fn get_quick_actions_placement(app: AppHandle<Wry>) -> Option<QuickActionsPlacem
 }
 
 #[tauri::command]
+fn set_quick_actions_height(
+    window: tauri::WebviewWindow<Wry>,
+    app: AppHandle<Wry>,
+    height: f64,
+) -> Result<f64, String> {
+    if window.label() != "quick-actions" {
+        return Err(
+            "set_quick_actions_height is restricted to the Quick Actions popover".to_owned(),
+        );
+    }
+    tray::resize_quick_actions_window(&app, height)
+}
+
+#[tauri::command]
 async fn complete_onboarding(app: AppHandle<Wry>) -> Result<UiPrefs, String> {
-    let saved = tauri::async_runtime::spawn_blocking(|| {
-        let mut current = prefs::load_prefs();
-        current.onboarding_completed = true;
-        prefs::save_prefs(&current)
+    let (saved, _) = tauri::async_runtime::spawn_blocking(|| {
+        prefs::update_prefs(|current| {
+            current.onboarding_completed = true;
+            Ok(())
+        })
     })
     .await
     .map_err(|err| err.to_string())??;
@@ -605,6 +759,12 @@ async fn quit_app(app: AppHandle<Wry>) -> Result<(), String> {
 pub(crate) async fn shutdown_and_exit(app: AppHandle<Wry>) {
     let state = app.state::<AppState>();
     state.is_quitting.store(true, Ordering::Release);
+    state.playback_enabled.store(false, Ordering::Release);
+    state.preview.quiesce();
+    if state.shutdown_started.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
     tray::shutdown_tray(&app).await;
     let lock = Arc::clone(&state.engine_lock);
     let preview = Arc::clone(&state.preview);
@@ -617,6 +777,18 @@ pub(crate) async fn shutdown_and_exit(app: AppHandle<Wry>) {
     .await;
 
     app.exit(0);
+}
+
+fn shutdown_sync_on_exit(app: &AppHandle<Wry>) {
+    let state = app.state::<AppState>();
+    state.is_quitting.store(true, Ordering::Release);
+    state.playback_enabled.store(false, Ordering::Release);
+    state.preview.shutdown();
+    if state.shutdown_started.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let _guard = state.engine_lock.lock().unwrap_or_else(|e| e.into_inner());
+    let _ = client::stop();
 }
 
 pub(crate) fn show_dashboard_window(
@@ -733,9 +905,13 @@ async fn ensure_tray_initialized_async(app: &AppHandle<Wry>) {
 
 fn record_confirmed_status(app: &AppHandle<Wry>, status: &DaemonStatus) {
     let state = app.state::<AppState>();
+    let quitting = state.is_quitting.load(Ordering::Acquire);
+    let allowed = !quitting && status.running && status.responsive;
     state
         .confirmed_stereo
         .store(status.stereo, Ordering::Release);
+    state.playback_enabled.store(allowed, Ordering::Release);
+    state.preview.set_enabled(allowed);
     state.has_confirmed_status.store(true, Ordering::Release);
 }
 
@@ -791,6 +967,12 @@ pub fn run() {
         }))
         .setup(|app| {
             let handle = app.handle();
+            // Stop any stale desktop-owned daemon whose previous app exited
+            // unexpectedly, while preserving an intentionally CLI-started session.
+            let _ = client::reconcile_stale_desktop_session(std::process::id());
+            let initial_status = client::status();
+            record_confirmed_status(handle, &initial_status);
+
             let ui_prefs = prefs::load_prefs();
             let (init_w, init_h) = if ui_prefs.onboarding_completed {
                 ui_prefs.effective_dashboard_size()
@@ -904,7 +1086,19 @@ pub fn run() {
                         }
                         #[cfg(not(target_os = "linux"))]
                         let _ = window.hide();
+                    } else if !quitting {
+                        // Hosts without a tray (or closing during onboarding):
+                        // closing the last window exits Thocci and stops playback cleanly.
+                        api.prevent_close();
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            shutdown_and_exit(app_handle).await;
+                        });
                     }
+                }
+                #[cfg(windows)]
+                (_, WindowEvent::ThemeChanged(_)) => {
+                    tray::refresh_windows_tray_appearance(window.app_handle());
                 }
                 _ => {}
             }
@@ -924,11 +1118,13 @@ pub fn run() {
             play_preview,
             get_ui_prefs,
             save_ui_prefs,
+            set_pack_pinned,
             set_window_size,
             get_overlay_placement,
             set_overlay_input_fullscreen,
             set_overlay_rect,
             get_quick_actions_placement,
+            set_quick_actions_height,
             complete_onboarding,
             get_platform_info,
             open_dashboard,
@@ -938,6 +1134,11 @@ pub fn run() {
             install_update,
             quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Thocci Tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building Thocci Tauri application")
+        .run(|app, event| {
+            if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+                shutdown_sync_on_exit(app);
+            }
+        });
 }

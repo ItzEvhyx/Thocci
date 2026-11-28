@@ -38,6 +38,8 @@ const requiredFiles = [
   path.join("illustrations", "onboarding.svg"),
   path.join("illustrations", "stage-light.svg"),
   path.join("illustrations", "stage-dark.svg"),
+  path.join("icons", "pin.svg"),
+  path.join("icons", "pin-filled.svg"),
   path.join("brand", "thocci-app-icon.icns"),
   path.join("brand", "thocci-app-icon.ico"),
   path.join("brand", "thocci-app-icon.png"),
