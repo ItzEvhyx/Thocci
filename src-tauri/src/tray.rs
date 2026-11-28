@@ -79,6 +79,7 @@ const TRAY_MARK_BLACK_32_PNG: &[u8] =
 
 /// Resolved host panel/taskbar surface brightness used to choose contrasting
 /// monochrome tray artwork.
+#[cfg(any(not(target_os = "macos"), test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraySurfaceAppearance {
     /// Light tray/taskbar surface -> render the black Thocci mark (`thocci-tray-dark-*`).
