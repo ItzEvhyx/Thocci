@@ -24,26 +24,23 @@ import { mountMascotStage } from "./stage.js";
 import { mountTypingGame } from "./typing-game.js";
 
 export const APP_RELEASE_NOTES = {
-  version: "1.1.1",
-  previousVersion: "1.1.0",
+  version: "1.1.2",
+  previousVersion: "1.1.1",
   added: [
-    "Favourites pinning: pin up to 10 built-in or imported soundpacks in the Soundpacks sidebar.",
-    "Quick Actions Pinned drawer: expand pinned soundpacks as keycap cards straight from the tray popover.",
-    "Version & changelog summary at the top of this Setup guide.",
+    "Version & changelog summary at the top of this Setup guide showing your current version and what changed from the previous release.",
+    "Paired key sound fallbacks so omitted keys (such as Numpad Enter, right-side modifiers, and Caps Lock in minimal packs) inherit the matching key sound instead of a generic letter click.",
   ],
   changed: [
     "Trackpad zoom & gesture filtering: Windows trackpad pinch-to-zoom and synthetic gesture events no longer trigger phantom clicks.",
-    "Full keyboard sound coverage: Caps Lock, Num Lock, Scroll Lock, and Super/Win/Command now play their soundpack audio on every OS, with paired fallbacks for Numpad Enter and right-side modifiers.",
-    "Adaptive OS tray mark: switches between black and white Thocci icons to match light or dark taskbars and panels.",
-    "Silent startup & engine lifecycle: stays silent on launch until explicitly enabled, spawns the version-matched daemon, and stops cleanly on disable or quit.",
+    "Full keyboard sound coverage: Caps Lock, Num Lock, Scroll Lock, and Super/Win/Command now play their soundpack audio across Windows, macOS, and Linux.",
   ],
   removed: [
-    "Unsolicited onboarding Spacebar click when finishing setup, plus preview audio while Thocci is disabled.",
+    "Legacy ignore list that silently blocked Caps Lock, Num Lock, Scroll Lock, and Super/Win/Command presses across all soundpacks.",
   ],
 };
 
 export function renderSetupGuideReleaseSection(appVersion, releaseNotes = APP_RELEASE_NOTES) {
-  const currentVersion = String(appVersion || releaseNotes.version || "1.1.1").replace(/^v/i, "");
+  const currentVersion = String(appVersion || releaseNotes.version || "1.1.2").replace(/^v/i, "");
   const prevVersion = String(releaseNotes.previousVersion || "").replace(/^v/i, "");
   const groups = [
     { key: "added", label: "Added", items: releaseNotes.added || [] },

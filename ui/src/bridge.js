@@ -163,7 +163,7 @@ async function call(cmd, args = {}) {
       return Math.max(320, Math.min(600, Math.round(Number(args.height) || 320)));
     case "get_platform_info":
       return {
-        app_version: "1.1.1",
+        app_version: "1.1.2",
         os: "linux",
         arch: "x86_64",
         session_type: "browser-preview",
@@ -185,7 +185,7 @@ async function call(cmd, args = {}) {
     case "check_for_update":
       return {
         available: false,
-        currentVersion: "1.1.1",
+        currentVersion: "1.1.2",
         version: null,
         notes: null,
       };

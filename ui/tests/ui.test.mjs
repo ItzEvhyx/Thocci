@@ -709,15 +709,15 @@ test("favourites, pin icons, silent onboarding, and flat warning feedback match 
 });
 
 test("setup guide displays current app version and Added/Changed/Removed changelog at the top", async () => {
-  assert.equal(APP_RELEASE_NOTES.version, "1.1.1");
-  assert.equal(APP_RELEASE_NOTES.previousVersion, "1.1.0");
+  assert.equal(APP_RELEASE_NOTES.version, "1.1.2");
+  assert.equal(APP_RELEASE_NOTES.previousVersion, "1.1.1");
   assert.ok(APP_RELEASE_NOTES.added.length > 0);
   assert.ok(APP_RELEASE_NOTES.changed.length > 0);
   assert.ok(APP_RELEASE_NOTES.removed.length > 0);
 
-  const sectionHtml = renderSetupGuideReleaseSection("1.1.1");
-  assert.match(sectionHtml, /class="guide-version-pill">v1\.1\.1</);
-  assert.match(sectionHtml, /Changes from v1\.1\.0/);
+  const sectionHtml = renderSetupGuideReleaseSection("1.1.2");
+  assert.match(sectionHtml, /class="guide-version-pill">v1\.1\.2</);
+  assert.match(sectionHtml, /Changes from v1\.1\.1/);
   assert.match(sectionHtml, /guide-change-tag--added">Added</);
   assert.match(sectionHtml, /guide-change-tag--changed">Changed</);
   assert.match(sectionHtml, /guide-change-tag--removed">Removed</);
@@ -735,7 +735,7 @@ test("setup guide displays current app version and Added/Changed/Removed changel
   globalThis.window = {};
   try {
     const platform = await api.getPlatformInfo();
-    assert.equal(platform.app_version, "1.1.1");
+    assert.equal(platform.app_version, "1.1.2");
   } finally {
     if (prevWindow === undefined) {
       delete globalThis.window;
