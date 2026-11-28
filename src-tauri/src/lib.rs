@@ -924,23 +924,12 @@ fn broadcast_status(app: &AppHandle<Wry>, status: &DaemonStatus) {
 /// Development builds run their own daemon so both processes use the same
 /// embedded soundpacks. Installed builds can use the sibling CLI to save memory.
 fn resolve_daemon_exe() -> std::io::Result<PathBuf> {
-    let current = std::env::current_exe()?;
-    if cfg!(debug_assertions) {
-        return Ok(current);
-    }
-
-    let bin_name = if cfg!(windows) {
-        "thocci.exe"
-    } else {
-        "thocci"
-    };
-    if let Some(dir) = current.parent() {
-        let sibling = dir.join(bin_name);
-        if sibling.is_file() {
-            return Ok(sibling);
-        }
-    }
-    Ok(current)
+    // Always spawn our own `thocci-app daemon ...` entrypoint rather than a
+    // sibling `thocci` CLI binary on disk. `thocci-app` embeds the exact
+    // version-matched daemon engine (soundpacks, audio fixes, and `--owner-pid`
+    // watchdog) and avoids version skew after in-app updates that replace only
+    // `thocci-app` while leaving an older `thocci` CLI binary in place.
+    std::env::current_exe()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

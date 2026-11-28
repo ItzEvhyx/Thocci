@@ -11,7 +11,8 @@ use crate::control::send_command;
 use crate::paths::{
     clamp_percent, ensure_state_dir, log_file, owner_file, parse_stereo_flag, pid_file, port_file,
     read_daemon_owner, read_pid_file, read_saved_pack, read_saved_stereo, read_saved_volume,
-    remove_if_exists, write_saved_pack, write_saved_stereo, write_saved_volume, SessionOwner,
+    remove_if_exists, write_daemon_owner, write_saved_pack, write_saved_stereo, write_saved_volume,
+    SessionOwner,
 };
 use crate::process::{pid_is_running, spawn_detached, terminate_pid};
 use crate::soundpack::{
@@ -142,7 +143,12 @@ pub fn is_responsive() -> bool {
             .is_some_and(|r| r.starts_with("OK"))
 }
 
-/// Start the background daemon using `daemon_exe` (normally the `thocci` CLI binary).
+fn is_unsupported_owner_pid_error(log_tail: &str) -> bool {
+    log_tail.contains("--owner-pid")
+        && (log_tail.contains("unexpected argument") || log_tail.contains("unrecognized"))
+}
+
+/// Start the background daemon using `daemon_exe` (normally `thocci-app` or `thocci`).
 pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     if running_pid().is_some() {
         if is_responsive() {
@@ -153,10 +159,6 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     }
 
     ensure_state_dir()?;
-    // Clear any stale control/PID/owner files left behind by a previous crashed or killed daemon.
-    remove_if_exists(pid_file());
-    remove_if_exists(port_file());
-    remove_if_exists(owner_file());
 
     if let Some(dir) = &options.pack_dir {
         if !dir.join("config.json").is_file() {
@@ -181,6 +183,36 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
     };
 
     let pack_id = read_saved_pack();
+    let owner_pid = options.owner_pid.filter(|&pid| pid > 0);
+    match start_once(daemon_exe, &options, volume, &pack_id, owner_pid) {
+        Ok(st) => Ok(st),
+        Err(err) if owner_pid.is_some() && is_unsupported_owner_pid_error(&err.to_string()) => {
+            log::warn!(
+                "Daemon executable {} does not support --owner-pid; retrying without it",
+                daemon_exe.display()
+            );
+            let st = start_once(daemon_exe, &options, volume, &pack_id, None)?;
+            if let Some(pid) = owner_pid {
+                let _ = write_daemon_owner(SessionOwner::Desktop(pid));
+            }
+            Ok(st)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn start_once(
+    daemon_exe: &Path,
+    options: &StartOptions,
+    volume: u8,
+    pack_id: &str,
+    owner_pid: Option<u32>,
+) -> Result<DaemonStatus> {
+    // Clear any stale control/PID/owner files left behind by a previous crashed or killed daemon.
+    remove_if_exists(pid_file());
+    remove_if_exists(port_file());
+    remove_if_exists(owner_file());
+
     let mut args = vec![
         "daemon".to_owned(),
         "--volume".to_owned(),
@@ -191,11 +223,11 @@ pub fn start(daemon_exe: &Path, options: StartOptions) -> Result<DaemonStatus> {
         args.push(dir.to_string_lossy().into_owned());
     } else {
         args.push("--pack-id".to_owned());
-        args.push(pack_id.clone());
+        args.push(pack_id.to_owned());
     }
-    if let Some(owner_pid) = options.owner_pid.filter(|&pid| pid > 0) {
+    if let Some(pid) = owner_pid {
         args.push("--owner-pid".to_owned());
-        args.push(owner_pid.to_string());
+        args.push(pid.to_string());
     }
 
     let log_path = log_file();
@@ -563,5 +595,15 @@ mod tests {
         assert!(!paths::pid_file().exists());
         assert!(!paths::port_file().exists());
         assert!(!paths::owner_file().exists());
+    }
+
+    #[test]
+    fn detects_legacy_daemon_rejecting_owner_pid_flag() {
+        assert!(is_unsupported_owner_pid_error(
+            "error: unexpected argument '--owner-pid' found\nUsage: thocci daemon --volume <VOLUME> --pack-id <PACK_ID>"
+        ));
+        assert!(!is_unsupported_owner_pid_error(
+            "error: permission denied opening /dev/input/event3"
+        ));
     }
 }
