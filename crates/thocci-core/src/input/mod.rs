@@ -1,8 +1,10 @@
 //! Cross-platform global keyboard capture.
 //!
 //! Each platform backend delivers [`KeyEvent`] (`Down` / `Up`) with Linux evdev
-//! keycodes, ignores OS key auto-repeat on every OS, and skips ignored keys
-//! (`CapsLock`, `NumLock`, `ScrollLock`, `Super`/`Win`/`Cmd`).
+//! keycodes, ignores OS key auto-repeat and synthetic/injected trackpad gesture
+//! events on every OS, and skips non-typing scroll/scale codes while ensuring
+//! every physical keyboard key (including `CapsLock`, `NumLock`, `ScrollLock`,
+//! and `Super`/`Win`/`Cmd`) plays its sound.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -100,6 +102,72 @@ impl WindowsKeyState {
             }
             _ => None,
         }
+    }
+}
+
+/// macOS `CGEventFlags` bitmasks relevant to modifier key transitions.
+pub const MAC_FLAG_ALPHA_SHIFT: u64 = 0x0001_0000;
+pub const MAC_FLAG_SHIFT: u64 = 0x0002_0000;
+pub const MAC_FLAG_CONTROL: u64 = 0x0004_0000;
+pub const MAC_FLAG_ALTERNATE: u64 = 0x0008_0000;
+pub const MAC_FLAG_COMMAND: u64 = 0x0010_0000;
+
+/// Stateful tracker for macOS `CGEventType::FlagsChanged` modifier events.
+///
+/// Standard modifiers (Shift/Control/Option/Command) emit `Down` when their
+/// flag bit rises and `Up` when it clears. Caps Lock (`0x39`) is a latching
+/// toggle on macOS (`CGEventFlagAlphaShift`), so every toggle transition
+/// (turning Caps Lock ON or OFF) emits a physical key press (`Down`).
+#[derive(Debug, Default)]
+pub struct MacosModifierState {
+    prev_flags: u64,
+    initialized: bool,
+}
+
+impl MacosModifierState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn process(&mut self, mac_key: u16, curr_flags: u64) -> Option<KeyEvent> {
+        let had_prev = self.initialized;
+        let prev_flags = self.prev_flags;
+        self.prev_flags = curr_flags;
+        self.initialized = true;
+
+        let kind = if mac_key == 0x39 {
+            let was_on = (prev_flags & MAC_FLAG_ALPHA_SHIFT) != 0;
+            let is_on = (curr_flags & MAC_FLAG_ALPHA_SHIFT) != 0;
+            if !had_prev || was_on != is_on {
+                Some(KeyEventKind::Down)
+            } else {
+                None
+            }
+        } else {
+            let mask = match mac_key {
+                0x38 | 0x3C => MAC_FLAG_SHIFT,
+                0x3B | 0x3E => MAC_FLAG_CONTROL,
+                0x3A | 0x3D => MAC_FLAG_ALTERNATE,
+                0x37 | 0x36 => MAC_FLAG_COMMAND,
+                _ => return None,
+            };
+            let was_down = (prev_flags & mask) != 0;
+            let is_down = (curr_flags & mask) != 0;
+            match (was_down, is_down) {
+                (false, true) => Some(KeyEventKind::Down),
+                (true, false) => Some(KeyEventKind::Up),
+                _ => None,
+            }
+        }?;
+
+        let linux_code = keymap::macos_to_linux(mac_key)?;
+        if keymap::is_ignored(linux_code) {
+            return None;
+        }
+        Some(KeyEvent {
+            code: linux_code,
+            kind,
+        })
     }
 }
 
@@ -321,6 +389,96 @@ mod tests {
             }),
             Some(KeyEvent {
                 code: 97,
+                kind: KeyEventKind::Down,
+            })
+        );
+    }
+
+    #[test]
+    fn windows_capslock_locks_and_meta_keys_emit_key_events() {
+        let mut state = WindowsKeyState::new();
+
+        for (vk_code, scan_code, flags, expected_code) in [
+            (0x14, 0x3A, 0, 58),                   // Caps Lock
+            (0x90, 0x45, WIN_LLKHF_EXTENDED, 69),  // Num Lock
+            (0x91, 0x46, 0, 70),                   // Scroll Lock
+            (0x5B, 0x5B, WIN_LLKHF_EXTENDED, 125), // Left Win / Super
+            (0x5C, 0x5C, WIN_LLKHF_EXTENDED, 126), // Right Win / Super
+        ] {
+            assert_eq!(
+                state.process(WindowsHookEvent {
+                    msg: WIN_WM_KEYDOWN,
+                    vk_code,
+                    scan_code,
+                    flags,
+                }),
+                Some(KeyEvent {
+                    code: expected_code,
+                    kind: KeyEventKind::Down,
+                }),
+                "keydown for vk=0x{vk_code:02X} scan=0x{scan_code:02X} should emit code {expected_code}"
+            );
+            assert_eq!(
+                state.process(WindowsHookEvent {
+                    msg: WIN_WM_KEYUP,
+                    vk_code,
+                    scan_code,
+                    flags: flags | WIN_LLKHF_UP,
+                }),
+                Some(KeyEvent {
+                    code: expected_code,
+                    kind: KeyEventKind::Up,
+                }),
+                "keyup for vk=0x{vk_code:02X} scan=0x{scan_code:02X} should emit code {expected_code}"
+            );
+        }
+    }
+
+    #[test]
+    fn macos_capslock_and_modifiers_emit_appropriate_key_events() {
+        let mut state = MacosModifierState::new();
+
+        // Caps Lock toggle ON -> Down
+        assert_eq!(
+            state.process(0x39, MAC_FLAG_ALPHA_SHIFT),
+            Some(KeyEvent {
+                code: 58,
+                kind: KeyEventKind::Down,
+            })
+        );
+        // Duplicate FlagsChanged with unchanged AlphaShift bit -> ignored
+        assert_eq!(state.process(0x39, MAC_FLAG_ALPHA_SHIFT), None);
+        // Caps Lock toggle OFF -> Down (toggling off is a physical key press)
+        assert_eq!(
+            state.process(0x39, 0),
+            Some(KeyEvent {
+                code: 58,
+                kind: KeyEventKind::Down,
+            })
+        );
+
+        // Command press & release -> Down / Up for Left Meta (125)
+        assert_eq!(
+            state.process(0x37, MAC_FLAG_COMMAND),
+            Some(KeyEvent {
+                code: 125,
+                kind: KeyEventKind::Down,
+            })
+        );
+        assert_eq!(
+            state.process(0x37, 0),
+            Some(KeyEvent {
+                code: 125,
+                kind: KeyEventKind::Up,
+            })
+        );
+
+        // Starting with Caps Lock already ON: first press turns it OFF (flags=0) -> still Down
+        let mut already_on = MacosModifierState::new();
+        assert_eq!(
+            already_on.process(0x39, 0),
+            Some(KeyEvent {
+                code: 58,
                 kind: KeyEventKind::Down,
             })
         );

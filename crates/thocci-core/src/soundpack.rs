@@ -840,8 +840,7 @@ impl Soundpack {
         }
     }
 
-    /// Look up press/release sounds for a Linux evdev keycode.
-    pub fn sound_for_linux_key(&self, linux_code: u16) -> Option<&KeySound> {
+    fn direct_sound_for_linux_key(&self, linux_code: u16) -> Option<&KeySound> {
         if let Some(sound) = self.linux_keys.get(&linux_code) {
             return Some(sound);
         }
@@ -850,8 +849,27 @@ impl Soundpack {
                 return Some(sound);
             }
         }
-        if let Some(sound) = self.uiohook_keys.get(&u32::from(linux_code)) {
+        if let Some(alt_code) = keymap::uiohook_alt_code(linux_code) {
+            if let Some(sound) = self.uiohook_keys.get(&alt_code) {
+                return Some(sound);
+            }
+        }
+        self.uiohook_keys.get(&u32::from(linux_code))
+    }
+
+    /// Look up press/release sounds for a Linux evdev keycode.
+    ///
+    /// Resolves direct v2/v1 definitions first, then paired/sibling keys (e.g.
+    /// `NumpadEnter` -> `Enter`, `ShiftRight` <-> `ShiftLeft`, `CapsLock` -> `Tab`),
+    /// before falling back to the pack's generic clip.
+    pub fn sound_for_linux_key(&self, linux_code: u16) -> Option<&KeySound> {
+        if let Some(sound) = self.direct_sound_for_linux_key(linux_code) {
             return Some(sound);
+        }
+        for &sibling in keymap::fallback_linux_keys(linux_code) {
+            if let Some(sound) = self.direct_sound_for_linux_key(sibling) {
+                return Some(sound);
+            }
         }
         self.fallback.as_ref()
     }
@@ -1218,6 +1236,31 @@ mod tests {
                 "pack '{}' missing Space",
                 meta.id
             );
+            assert!(
+                pack.sound_for_linux_key(58)
+                    .or_else(|| pack.representative_sound())
+                    .is_some(),
+                "pack '{}' missing CapsLock sound",
+                meta.id
+            );
+            for code in [
+                1u16, 14, 15, 28, 29, 30, 42, 54, 56, 57, 58, 69, 70, 96, 97, 100, 103, 105, 106,
+                108, 111, 125, 126,
+            ] {
+                assert!(
+                    !keymap::is_ignored(code),
+                    "physical key {code} must not be ignored"
+                );
+                let sound = pack
+                    .sound_for_linux_key(code)
+                    .or_else(|| pack.representative_sound())
+                    .unwrap_or_else(|| panic!("pack '{}' missing sound for key {code}", meta.id));
+                assert!(
+                    !sound.down.samples.is_empty(),
+                    "pack '{}' has empty sample for key {code}",
+                    meta.id
+                );
+            }
         }
     }
 
@@ -1262,6 +1305,42 @@ mod tests {
         assert!(pack.clip_for_linux_key(103).is_some()); // Up
         assert!(pack.clip_for_linux_key(111).is_some()); // Delete
         assert!(pack.clip_for_linux_key(96).is_some()); // KP Enter
+    }
+
+    #[test]
+    fn capslock_and_paired_keys_resolve_to_appropriate_sounds() {
+        // Packs defining CapsLock return their dedicated CapsLock sound (not silent).
+        let cherry = Soundpack::load_builtin("cherry-mx", Some(48_000)).unwrap();
+        assert!(cherry.sound_for_linux_key(58).is_some());
+        assert!(cherry.sound_for_linux_key(69).is_some());
+        assert!(cherry.sound_for_linux_key(70).is_some());
+        assert!(cherry.sound_for_linux_key(125).is_some());
+        assert!(cherry.sound_for_linux_key(126).is_some());
+
+        // aula-f75 omits NumpadEnter (96); it should inherit Enter (28), not KeyA (30).
+        let aula = Soundpack::load_builtin("aula-f75-leobog-reaper", Some(48_000)).unwrap();
+        let enter = aula.sound_for_linux_key(28).expect("Enter");
+        let kp_enter = aula.sound_for_linux_key(96).expect("NumpadEnter");
+        assert_eq!(kp_enter.down.samples.as_ref(), enter.down.samples.as_ref());
+
+        // keychron-dream-fn-v2 omits ControlRight (97) & AltRight (100); they should
+        // inherit ControlLeft (29) & AltLeft (56).
+        let keychron = Soundpack::load_builtin("keychron-dream-fn-v2", Some(48_000)).unwrap();
+        let lctrl = keychron.sound_for_linux_key(29).expect("ControlLeft");
+        let rctrl = keychron.sound_for_linux_key(97).expect("ControlRight");
+        assert_eq!(rctrl.down.samples.as_ref(), lctrl.down.samples.as_ref());
+
+        // hyperx-alloy-cherry-mx-blue omits ShiftRight (54); it should inherit ShiftLeft (42).
+        let hyperx = Soundpack::load_builtin("hyperx-alloy-cherry-mx-blue", Some(48_000)).unwrap();
+        let lshift = hyperx.sound_for_linux_key(42).expect("ShiftLeft");
+        let rshift = hyperx.sound_for_linux_key(54).expect("ShiftRight");
+        assert_eq!(rshift.down.samples.as_ref(), lshift.down.samples.as_ref());
+
+        // typewriter omits CapsLock (58); it should resolve via Tab (15).
+        let typewriter = Soundpack::load_builtin("typewriter", Some(48_000)).unwrap();
+        let tab = typewriter.sound_for_linux_key(15).expect("Tab");
+        let caps = typewriter.sound_for_linux_key(58).expect("CapsLock");
+        assert_eq!(caps.down.samples.as_ref(), tab.down.samples.as_ref());
     }
 
     #[test]

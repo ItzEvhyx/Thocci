@@ -22,16 +22,11 @@ function svgEl(tag, attrs = {}) {
 }
 
 /**
- * Keys that are ignored for daemon sound playback in `thocci-core/src/keymap.rs`
- * (still visually highlighted on physical press, and audibly testable via pointer).
+ * Physical keyboard keys that are intentionally silent in `thocci-core/src/keymap.rs`.
+ * Every physical keyboard key (including CapsLock, NumLock, ScrollLock, and Meta)
+ * now plays its soundpack audio.
  */
-export const IGNORED_PHYSICAL_AUDIO_CODES = new Set([
-  "CapsLock",
-  "NumLock",
-  "ScrollLock",
-  "MetaLeft",
-  "MetaRight",
-]);
+export const IGNORED_PHYSICAL_AUDIO_CODES = new Set();
 
 /**
  * Pure key-hold tracker usable both in the browser UI and Node unit tests.

@@ -4,19 +4,18 @@
 //! Privacy & Security. Ignores key auto-repeat and delivers both key press and
 //! key release events (including modifier transitions via `FlagsChanged`).
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use core_foundation::runloop::{kCFRunLoopCommonModes, kCFRunLoopDefaultMode, CFRunLoop};
 use core_graphics::event::{
-    CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-    CGEventType, CallbackResult, EventField,
+    CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
+    CallbackResult, EventField,
 };
 
-use crate::input::{KeyCallback, KeyEvent, KeyEventKind, KeyListener};
+use crate::input::{KeyCallback, KeyEvent, KeyEventKind, KeyListener, MacosModifierState};
 use crate::keymap;
 use crate::{Error, Result};
 
@@ -76,8 +75,8 @@ impl Drop for MacosTapListener {
 }
 
 fn tap_thread(on_key: KeyCallback, stop: Arc<AtomicBool>, ready_tx: mpsc::Sender<Result<()>>) {
-    let prev_flags = Arc::new(AtomicU64::new(0));
-    let cb_flags = Arc::clone(&prev_flags);
+    let modifier_state = Arc::new(Mutex::new(MacosModifierState::new()));
+    let cb_mods = Arc::clone(&modifier_state);
     let cb = on_key;
 
     let tap = match CGEventTap::new(
@@ -90,7 +89,7 @@ fn tap_thread(on_key: KeyCallback, stop: Arc<AtomicBool>, ready_tx: mpsc::Sender
             CGEventType::FlagsChanged,
         ],
         move |_proxy, etype, event| {
-            handle_event(etype, event, &cb_flags, &cb);
+            handle_event(etype, event, &cb_mods, &cb);
             CallbackResult::Keep
         },
     ) {
@@ -127,7 +126,7 @@ fn tap_thread(on_key: KeyCallback, stop: Arc<AtomicBool>, ready_tx: mpsc::Sender
 fn handle_event(
     etype: CGEventType,
     event: &core_graphics::event::CGEvent,
-    prev_flags: &AtomicU64,
+    modifier_state: &Mutex<MacosModifierState>,
     on_key: &KeyCallback,
 ) {
     // Ignore software-synthesized keyboard events posted by user-space apps
@@ -154,29 +153,15 @@ fn handle_event(
         }
         CGEventType::FlagsChanged => {
             let current = event.get_flags().bits();
-            let previous = prev_flags.swap(current, Ordering::AcqRel);
-            if let Some(kind) = modifier_transition(mac_key, previous, current) {
-                emit_if_mapped(mac_key, kind, on_key);
+            let key_event = {
+                let mut state = modifier_state.lock().unwrap_or_else(|e| e.into_inner());
+                state.process(mac_key, current)
+            };
+            if let Some(ev) = key_event {
+                on_key(ev);
             }
         }
         _ => {}
-    }
-}
-
-fn modifier_transition(mac_key: u16, prev: u64, curr: u64) -> Option<KeyEventKind> {
-    let mask = match mac_key {
-        0x38 | 0x3C => CGEventFlags::CGEventFlagShift.bits(),
-        0x3B | 0x3E => CGEventFlags::CGEventFlagControl.bits(),
-        0x3A | 0x3D => CGEventFlags::CGEventFlagAlternate.bits(),
-        0x37 | 0x36 => CGEventFlags::CGEventFlagCommand.bits(),
-        _ => return None,
-    };
-    let was_down = (prev & mask) != 0;
-    let is_down = (curr & mask) != 0;
-    match (was_down, is_down) {
-        (false, true) => Some(KeyEventKind::Down),
-        (true, false) => Some(KeyEventKind::Up),
-        _ => None,
     }
 }
 

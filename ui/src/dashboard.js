@@ -33,6 +33,7 @@ export const APP_RELEASE_NOTES = {
   ],
   changed: [
     "Trackpad zoom & gesture filtering: Windows trackpad pinch-to-zoom and synthetic gesture events no longer trigger phantom clicks.",
+    "Full keyboard sound coverage: Caps Lock, Num Lock, Scroll Lock, and Super/Win/Command now play their soundpack audio on every OS, with paired fallbacks for Numpad Enter and right-side modifiers.",
     "Adaptive OS tray mark: switches between black and white Thocci icons to match light or dark taskbars and panels.",
     "Silent startup & engine lifecycle: stays silent on launch until explicitly enabled, spawns the version-matched daemon, and stops cleanly on disable or quit.",
   ],

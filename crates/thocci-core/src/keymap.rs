@@ -60,10 +60,51 @@ pub fn dom_code_zone(code: &str) -> KeyZone {
         .unwrap_or(KeyZone::Center)
 }
 
-/// Keys that never click: Caps/Num/Scroll Lock, Super/Windows/Command keys,
-/// and non-typing scroll/zoom/scale events (`KEY_SCALE`, `KEY_SCROLLUP`, `KEY_SCROLLDOWN`).
+/// Non-typing keycodes that never click (scroll/zoom/scale events:
+/// `KEY_SCALE`, `KEY_SCROLLUP`, `KEY_SCROLLDOWN`).
+///
+/// Physical lock and modifier keys (`CapsLock`, `NumLock`, `ScrollLock`,
+/// `Super`/`Win`/`Cmd`) are intentionally NOT ignored so every physical
+/// keyboard key plays its sound.
 pub fn is_ignored(linux_code: u16) -> bool {
-    matches!(linux_code, 58 | 69 | 70 | 120 | 125 | 126 | 177 | 178)
+    matches!(linux_code, 120 | 177 | 178)
+}
+
+/// Semantic sibling keycodes to try when a soundpack omits a specific key
+/// definition (before falling back to the pack's generic or representative clip).
+pub fn fallback_linux_keys(linux_code: u16) -> &'static [u16] {
+    match linux_code {
+        96 => &[28],     // NumpadEnter -> Enter
+        54 => &[42],     // ShiftRight -> ShiftLeft
+        42 => &[54],     // ShiftLeft -> ShiftRight
+        97 => &[29],     // ControlRight -> ControlLeft
+        29 => &[97],     // ControlLeft -> ControlRight
+        100 => &[56],    // AltRight -> AltLeft
+        56 => &[100],    // AltLeft -> AltRight
+        126 => &[125],   // MetaRight -> MetaLeft
+        125 => &[126],   // MetaLeft -> MetaRight
+        58 => &[15, 42], // CapsLock -> Tab, ShiftLeft
+        _ => &[],
+    }
+}
+
+/// Alternate `0xEE00`-prefixed libuiohook extended codes used by some v1 packs
+/// for the navigation cluster and arrow keys.
+pub fn uiohook_alt_code(linux_code: u16) -> Option<u32> {
+    let code = match linux_code {
+        102 => 60999, // Home
+        103 => 61000, // Up
+        104 => 61001, // Page Up
+        105 => 61003, // Left
+        106 => 61005, // Right
+        107 => 61007, // End
+        108 => 61008, // Down
+        109 => 61009, // Page Down
+        110 => 61010, // Insert
+        111 => 61011, // Delete
+        _ => return None,
+    };
+    Some(code)
 }
 
 /// Linux keycode -> libuiohook keycode used in v1 pack `defines`.
@@ -166,6 +207,7 @@ fn windows_vk_to_linux(vk: u32) -> Option<u16> {
         0x08 => 14,
         0x09 => 15,
         0x0D => 28,
+        0x14 => 58, // Caps Lock
         0x1B => 1,
         0x20 => 57,
         0x10 | 0xA0 => 42,
@@ -174,6 +216,9 @@ fn windows_vk_to_linux(vk: u32) -> Option<u16> {
         0xA3 => 97,
         0x12 | 0xA4 => 56,
         0xA5 => 100,
+        0x5B => 125, // Left Windows
+        0x5C => 126, // Right Windows
+        0x5D => 127, // Apps / Context Menu
         0x21 => 104,
         0x22 => 109,
         0x23 => 107,
@@ -185,9 +230,26 @@ fn windows_vk_to_linux(vk: u32) -> Option<u16> {
         0x2C => 99,
         0x2D => 110,
         0x2E => 111,
+        0x60 => 82, // Numpad 0
+        0x61 => 79, // Numpad 1
+        0x62 => 80, // Numpad 2
+        0x63 => 81, // Numpad 3
+        0x64 => 75, // Numpad 4
+        0x65 => 76, // Numpad 5
+        0x66 => 77, // Numpad 6
+        0x67 => 71, // Numpad 7
+        0x68 => 72, // Numpad 8
+        0x69 => 73, // Numpad 9
+        0x6A => 55, // Numpad *
+        0x6B => 78, // Numpad +
+        0x6D => 74, // Numpad -
+        0x6E => 83, // Numpad .
+        0x6F => 98, // Numpad /
         0x70..=0x79 => (vk - 0x70 + 59) as u16,
         0x7A => 87,
         0x7B => 88,
+        0x7C..=0x87 => (vk - 0x7C + 183) as u16, // F13..F24
+        0x91 => 70,                              // Scroll Lock
         0xBA => 39,
         0xBB => 13,
         0xBC => 51,
@@ -199,6 +261,7 @@ fn windows_vk_to_linux(vk: u32) -> Option<u16> {
         0xDC => 43,
         0xDD => 27,
         0xDE => 40,
+        0xE2 => 86, // ISO IntlBackslash
         _ => return None,
     };
     Some(code)
@@ -496,11 +559,19 @@ mod tests {
     }
 
     #[test]
-    fn ignored_keys_match_mechy() {
-        for code in [58, 69, 70, 120, 125, 126, 177, 178] {
-            assert!(is_ignored(code));
+    fn ignored_keys_only_skip_non_typing_scroll_and_scale() {
+        for code in [120, 177, 178] {
+            assert!(
+                is_ignored(code),
+                "scroll/scale code {code} should be ignored"
+            );
         }
-        assert!(!is_ignored(KEY_A));
+        for physical in [KEY_A, 58, 69, 70, 125, 126] {
+            assert!(
+                !is_ignored(physical),
+                "physical key {physical} must not be ignored"
+            );
+        }
     }
 
     #[test]
